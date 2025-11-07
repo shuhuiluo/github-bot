@@ -18,6 +18,7 @@ export interface GitHubIssue {
   comments: number;
   labels: GitHubLabel[];
   html_url: string;
+  pull_request?: any; // Present if this is actually a PR
   [key: string]: any;
 }
 

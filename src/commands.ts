@@ -18,6 +18,15 @@ const commands = [
     name: "gh_issue",
     description: "Show GitHub issue details (usage: /gh_issue owner/repo #123)",
   },
+  {
+    name: "gh_prs",
+    description:
+      "List recent pull requests (usage: /gh_prs owner/repo [count])",
+  },
+  {
+    name: "gh_issues",
+    description: "List recent issues (usage: /gh_issues owner/repo [count])",
+  },
 ] as const satisfies PlainMessage<SlashCommand>[];
 
 export default commands;

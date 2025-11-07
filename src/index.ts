@@ -5,6 +5,8 @@ import commands from "./commands";
 import crypto from "node:crypto";
 import { handleGhIssue } from "./handlers/gh-issue-handler";
 import { handleGhPr } from "./handlers/gh-pr-handler";
+import { handleGhPrs } from "./handlers/gh-prs-handler";
+import { handleGhIssues } from "./handlers/gh-issues-handler";
 import { handleGithubSubscription } from "./handlers/github-subscription-handler";
 import {
   formatPullRequest,
@@ -46,6 +48,8 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
       "**Query Commands:**\n" +
       "• `/gh_pr owner/repo #123 [--full]` - Show pull request details\n" +
       "• `/gh_issue owner/repo #123 [--full]` - Show issue details\n" +
+      "• `/gh_prs owner/repo [count]` - List recent pull requests (default: 10, max: 50)\n" +
+      "• `/gh_issues owner/repo [count]` - List recent issues (default: 10, max: 50)\n" +
       "• Add `--full` flag to show complete description\n\n" +
       "**Other Commands:**\n" +
       "• `/help` - Show this help message"
@@ -62,6 +66,10 @@ bot.onSlashCommand("github", async (handler, event) => {
 bot.onSlashCommand("gh_pr", handleGhPr);
 
 bot.onSlashCommand("gh_issue", handleGhIssue);
+
+bot.onSlashCommand("gh_prs", handleGhPrs);
+
+bot.onSlashCommand("gh_issues", handleGhIssues);
 
 // ============================================================================
 // START BOT & SETUP HONO APP

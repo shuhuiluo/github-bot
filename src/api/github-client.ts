@@ -45,3 +45,21 @@ export async function getPullRequest(
 ): Promise<GitHubPullRequest> {
   return githubFetch(`/repos/${repo}/pulls/${prNumber}`);
 }
+
+export async function listPullRequests(
+  repo: string,
+  count: number = 10
+): Promise<GitHubPullRequest[]> {
+  return githubFetch(
+    `/repos/${repo}/pulls?state=all&per_page=${count}&sort=created&direction=desc`
+  );
+}
+
+export async function listIssues(
+  repo: string,
+  count: number = 10
+): Promise<GitHubIssue[]> {
+  return githubFetch(
+    `/repos/${repo}/issues?state=all&per_page=${count}&sort=created&direction=desc`
+  );
+}
