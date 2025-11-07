@@ -42,8 +42,9 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
       "• `/github unsubscribe` - Unsubscribe from all repos\n" +
       "• `/github status` - Show current subscriptions\n\n" +
       "**Query Commands:**\n" +
-      "• `/gh_pr owner/repo #123` - Show pull request details\n" +
-      "• `/gh_issue owner/repo #123` - Show issue details\n\n" +
+      "• `/gh_pr owner/repo #123 [--full]` - Show pull request details\n" +
+      "• `/gh_issue owner/repo #123 [--full]` - Show issue details\n" +
+      "• Add `--full` flag to show complete description\n\n" +
       "**Other Commands:**\n" +
       "• `/help` - Show this help message\n" +
       "• `/time` - Get the current time"

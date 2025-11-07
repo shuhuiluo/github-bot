@@ -38,6 +38,11 @@ describe("gh_issue handler - Integration", () => {
     expect(message).toContain("**towns-protocol/towns**");
     expect(message).toContain("Bot building documentation"); // Real issue title
 
+    // Should contain the description (truncated to 100 chars)
+    expect(message).toContain(
+      "Is there any documentation on how to build bots for towns?"
+    );
+
     // Should have formatted fields
     expect(message).toContain("📊 Status:");
     expect(message).toContain("👤 Author:");

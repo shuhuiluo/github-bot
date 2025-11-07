@@ -12,6 +12,7 @@ export interface GitHubLabel {
 export interface GitHubIssue {
   number: number;
   title: string;
+  body: string | null;
   state: "open" | "closed";
   user: GitHubUser;
   comments: number;

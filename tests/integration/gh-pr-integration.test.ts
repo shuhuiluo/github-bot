@@ -7,12 +7,12 @@ import { createMockBotHandler } from "../fixtures/mock-bot-handler";
  * This test makes REAL API calls to GitHub to verify actual behavior
  */
 describe("gh_pr handler - Integration", () => {
-  test("should fetch real GitHub PR from towns-protocol/towns #4031", async () => {
+  test("should fetch real GitHub PR from towns-protocol/towns #4034", async () => {
     const mockHandler = createMockBotHandler();
 
     await handleGhPr(mockHandler, {
       channelId: "test-channel",
-      args: ["towns-protocol/towns", "#4031"],
+      args: ["towns-protocol/towns", "#4034"],
     });
 
     // Should have sent exactly one message
@@ -34,8 +34,11 @@ describe("gh_pr handler - Integration", () => {
     }
 
     // Should contain the actual PR data
-    expect(message).toContain("**Pull Request #4031**");
+    expect(message).toContain("**Pull Request #4034**");
     expect(message).toContain("**towns-protocol/towns**");
+
+    // Should contain the description (truncated to 100 chars)
+    expect(message).toContain("no need for this to be in two places");
 
     // Should have formatted fields
     expect(message).toContain("📊 Status:");

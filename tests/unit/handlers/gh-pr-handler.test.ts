@@ -25,7 +25,7 @@ describe("gh_pr handler", () => {
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Usage: `/gh_pr owner/repo #123` or `/gh_pr owner/repo 123`"
+      "❌ Usage: `/gh_pr owner/repo #123 [--full]` or `/gh_pr owner/repo 123 [--full]`"
     );
   });
 
@@ -38,7 +38,7 @@ describe("gh_pr handler", () => {
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Usage: `/gh_pr owner/repo #123` or `/gh_pr owner/repo 123`"
+      "❌ Usage: `/gh_pr owner/repo #123 [--full]` or `/gh_pr owner/repo 123 [--full]`"
     );
   });
 

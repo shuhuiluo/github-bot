@@ -25,7 +25,7 @@ describe("gh_issue handler", () => {
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Usage: `/gh_issue owner/repo #123` or `/gh_issue owner/repo 123`"
+      "❌ Usage: `/gh_issue owner/repo #123 [--full]` or `/gh_issue owner/repo 123 [--full]`"
     );
   });
 
@@ -38,7 +38,7 @@ describe("gh_issue handler", () => {
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Usage: `/gh_issue owner/repo #123` or `/gh_issue owner/repo 123`"
+      "❌ Usage: `/gh_issue owner/repo #123 [--full]` or `/gh_issue owner/repo 123 [--full]`"
     );
   });
 
