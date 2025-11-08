@@ -17,6 +17,15 @@ import {
   formatIssueComment,
   formatPullRequestReview,
 } from "./formatters/github-events";
+import type {
+  PullRequestEvent,
+  IssuesEvent,
+  PushEvent,
+  ReleaseEvent,
+  WorkflowRunEvent,
+  IssueCommentEvent,
+  PullRequestReviewEvent,
+} from "@octokit/webhooks-types";
 
 const bot = await makeTownsBot(
   process.env.APP_PRIVATE_DATA!,
@@ -101,7 +110,10 @@ app.post("/github-webhook", async c => {
     }
   }
 
-  const payload = JSON.parse(body);
+  const payload = JSON.parse(body) as {
+    repository?: { full_name: string };
+    [key: string]: unknown;
+  };
   const repo = payload.repository?.full_name;
 
   if (!repo) {
@@ -118,25 +130,27 @@ app.post("/github-webhook", async c => {
   let message = "";
   switch (event) {
     case "pull_request":
-      message = formatPullRequest(payload);
+      message = formatPullRequest(payload as unknown as PullRequestEvent);
       break;
     case "issues":
-      message = formatIssue(payload);
+      message = formatIssue(payload as unknown as IssuesEvent);
       break;
     case "push":
-      message = formatPush(payload);
+      message = formatPush(payload as unknown as PushEvent);
       break;
     case "release":
-      message = formatRelease(payload);
+      message = formatRelease(payload as unknown as ReleaseEvent);
       break;
     case "workflow_run":
-      message = formatWorkflowRun(payload);
+      message = formatWorkflowRun(payload as unknown as WorkflowRunEvent);
       break;
     case "issue_comment":
-      message = formatIssueComment(payload);
+      message = formatIssueComment(payload as unknown as IssueCommentEvent);
       break;
     case "pull_request_review":
-      message = formatPullRequestReview(payload);
+      message = formatPullRequestReview(
+        payload as unknown as PullRequestReviewEvent
+      );
       break;
   }
 

@@ -42,13 +42,15 @@ export async function handleGhPr(
       `**${pr.title}**\n\n` +
       (description ? `${description}\n\n` : "") +
       `📊 Status: ${pr.state === "open" ? "🟢 Open" : pr.merged ? "✅ Merged" : "❌ Closed"}\n` +
-      `👤 Author: ${pr.user.login}\n` +
-      `📝 Changes: +${pr.additions} -${pr.deletions}\n` +
-      `💬 Comments: ${pr.comments}\n` +
+      `👤 Author: ${pr.user?.login || "Unknown"}\n` +
+      `📝 Changes: +${pr.additions ?? 0} -${pr.deletions ?? 0}\n` +
+      `💬 Comments: ${pr.comments ?? 0}\n` +
       `🔗 ${pr.html_url}`;
 
     await handler.sendMessage(channelId, message);
-  } catch (error: any) {
-    await handler.sendMessage(channelId, `❌ Error: ${error.message}`);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    await handler.sendMessage(channelId, `❌ Error: ${message}`);
   }
 }

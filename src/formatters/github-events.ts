@@ -3,7 +3,17 @@
  * Converts GitHub webhook payloads into human-readable messages for Towns channels
  */
 
-export function formatPullRequest(payload: any): string {
+import type {
+  PullRequestEvent,
+  IssuesEvent,
+  PushEvent,
+  ReleaseEvent,
+  WorkflowRunEvent,
+  IssueCommentEvent,
+  PullRequestReviewEvent,
+} from "@octokit/webhooks-types";
+
+export function formatPullRequest(payload: PullRequestEvent): string {
   const { action, pull_request, repository } = payload;
 
   if (action === "opened") {
@@ -40,7 +50,7 @@ export function formatPullRequest(payload: any): string {
   return "";
 }
 
-export function formatIssue(payload: any): string {
+export function formatIssue(payload: IssuesEvent): string {
   const { action, issue, repository } = payload;
 
   if (action === "opened") {
@@ -66,7 +76,7 @@ export function formatIssue(payload: any): string {
   return "";
 }
 
-export function formatPush(payload: any): string {
+export function formatPush(payload: PushEvent): string {
   const { ref, commits, pusher, repository, compare } = payload;
   const branch = ref.replace("refs/heads/", "");
   const commitCount = commits?.length || 0;
@@ -96,7 +106,7 @@ export function formatPush(payload: any): string {
   return message;
 }
 
-export function formatRelease(payload: any): string {
+export function formatRelease(payload: ReleaseEvent): string {
   const { action, release, repository } = payload;
 
   if (action === "published") {
@@ -112,7 +122,7 @@ export function formatRelease(payload: any): string {
   return "";
 }
 
-export function formatWorkflowRun(payload: any): string {
+export function formatWorkflowRun(payload: WorkflowRunEvent): string {
   const { action, workflow_run, repository } = payload;
 
   if (action === "completed") {
@@ -131,7 +141,7 @@ export function formatWorkflowRun(payload: any): string {
   return "";
 }
 
-export function formatIssueComment(payload: any): string {
+export function formatIssueComment(payload: IssueCommentEvent): string {
   const { action, issue, comment, repository } = payload;
 
   if (action === "created") {
@@ -149,7 +159,9 @@ export function formatIssueComment(payload: any): string {
   return "";
 }
 
-export function formatPullRequestReview(payload: any): string {
+export function formatPullRequestReview(
+  payload: PullRequestReviewEvent
+): string {
   const { action, review, pull_request, repository } = payload;
 
   if (action === "submitted") {

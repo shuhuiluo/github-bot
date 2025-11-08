@@ -33,7 +33,9 @@ export async function handleGhIssue(
   try {
     const issue = await getIssue(repo, issueNumber);
 
-    const labels = issue.labels.map((l: any) => l.name).join(", ");
+    const labels = issue.labels
+      .map(l => (typeof l === "string" ? l : l.name))
+      .join(", ");
 
     // Format description
     const description = hasFullFlag
@@ -46,13 +48,15 @@ export async function handleGhIssue(
       `**${issue.title}**\n\n` +
       (description ? `${description}\n\n` : "") +
       `📊 Status: ${issue.state === "open" ? "🟢 Open" : "✅ Closed"}\n` +
-      `👤 Author: ${issue.user.login}\n` +
-      `💬 Comments: ${issue.comments}\n` +
+      `👤 Author: ${issue.user?.login || "Unknown"}\n` +
+      `💬 Comments: ${issue.comments ?? 0}\n` +
       (labels ? `🏷️ Labels: ${labels}\n` : "") +
       `🔗 ${issue.html_url}`;
 
     await handler.sendMessage(channelId, message);
-  } catch (error: any) {
-    await handler.sendMessage(channelId, `❌ Error: ${error.message}`);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    await handler.sendMessage(channelId, `❌ Error: ${message}`);
   }
 }

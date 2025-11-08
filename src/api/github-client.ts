@@ -1,31 +1,29 @@
-import type { GitHubIssue, GitHubPullRequest } from "./github-types";
+import { Octokit } from "@octokit/rest";
+import type { Endpoints } from "@octokit/types";
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_API = "https://api.github.com";
+const octokit = new Octokit({
+  auth: process.env.GITHUB_TOKEN,
+});
 
-export async function githubFetch<T = unknown>(path: string): Promise<T> {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github.v3+json",
-  };
+// Export Octokit's native types using @octokit/types
+export type GitHubIssue =
+  Endpoints["GET /repos/{owner}/{repo}/issues/{issue_number}"]["response"]["data"];
+export type GitHubPullRequest =
+  Endpoints["GET /repos/{owner}/{repo}/pulls/{pull_number}"]["response"]["data"];
+export type GitHubIssueList =
+  Endpoints["GET /repos/{owner}/{repo}/issues"]["response"]["data"];
+export type GitHubPullRequestList =
+  Endpoints["GET /repos/{owner}/{repo}/pulls"]["response"]["data"];
 
-  if (GITHUB_TOKEN) {
-    headers.Authorization = `token ${GITHUB_TOKEN}`;
-  }
-
-  const response = await fetch(`${GITHUB_API}${path}`, { headers });
-
-  if (!response.ok) {
-    throw new Error(
-      `GitHub API error: ${response.status} ${response.statusText}`
-    );
-  }
-
-  return (await response.json()) as T;
+function parseRepo(repo: string): { owner: string; repo: string } {
+  const [owner, repoName] = repo.split("/");
+  return { owner, repo: repoName };
 }
 
 export async function validateRepo(repo: string): Promise<boolean> {
   try {
-    await githubFetch(`/repos/${repo}`);
+    const { owner, repo: repoName } = parseRepo(repo);
+    await octokit.repos.get({ owner, repo: repoName });
     return true;
   } catch {
     return false;
@@ -36,41 +34,66 @@ export async function getIssue(
   repo: string,
   issueNumber: string
 ): Promise<GitHubIssue> {
-  return githubFetch<GitHubIssue>(`/repos/${repo}/issues/${issueNumber}`);
+  const { owner, repo: repoName } = parseRepo(repo);
+  const { data } = await octokit.issues.get({
+    owner,
+    repo: repoName,
+    issue_number: parseInt(issueNumber),
+  });
+  return data;
 }
 
 export async function getPullRequest(
   repo: string,
   prNumber: string
 ): Promise<GitHubPullRequest> {
-  return githubFetch<GitHubPullRequest>(`/repos/${repo}/pulls/${prNumber}`);
+  const { owner, repo: repoName } = parseRepo(repo);
+  const { data } = await octokit.pulls.get({
+    owner,
+    repo: repoName,
+    pull_number: parseInt(prNumber),
+  });
+  return data;
 }
 
 export async function listPullRequests(
   repo: string,
   count: number = 10,
   filters?: { state?: string; author?: string }
-): Promise<GitHubPullRequest[]> {
-  const results: GitHubPullRequest[] = [];
-  let page = 1;
-  const perPage = 100;
-  const maxPages = 10;
+): Promise<GitHubPullRequestList> {
+  const { owner, repo: repoName } = parseRepo(repo);
 
-  // Build API query
-  let apiState = "all";
+  // Determine API state (merged PRs are fetched as closed)
+  let apiState: "open" | "closed" | "all" = "all";
   if (filters?.state === "open" || filters?.state === "closed") {
     apiState = filters.state;
+  } else if (filters?.state === "merged") {
+    apiState = "closed";
   }
 
-  // Loop until we have enough results or run out of pages
-  while (results.length < count && page <= maxPages) {
-    const prs = await githubFetch<GitHubPullRequest[]>(
-      `/repos/${repo}/pulls?state=${apiState}&per_page=${perPage}&page=${page}&sort=created&direction=desc`
-    );
+  const results: GitHubPullRequestList = [];
+  let pageCount = 0;
+  const maxPages = 10; // Limit pagination to avoid timeouts
 
+  // Use Octokit's pagination iterator
+  const iterator = octokit.paginate.iterator(octokit.pulls.list, {
+    owner,
+    repo: repoName,
+    state: apiState,
+    per_page: 100,
+    sort: "created",
+    direction: "desc",
+  });
+
+  for await (const { data: prs } of iterator) {
+    pageCount++;
+
+    // Stop if we've fetched too many pages
+    if (pageCount > maxPages) break;
+
+    // No more items available
     if (prs.length === 0) break;
 
-    // Apply client-side filters
     let filtered = prs;
 
     // Filter by merged state (API doesn't distinguish merged from closed)
@@ -78,15 +101,17 @@ export async function listPullRequests(
       filtered = filtered.filter(pr => pr.merged_at !== null);
     }
 
-    // Filter by author (API doesn't support this natively)
+    // Filter by author
     if (filters?.author) {
       filtered = filtered.filter(
-        pr => pr.user.login.toLowerCase() === filters.author!.toLowerCase()
+        pr => pr.user?.login.toLowerCase() === filters.author!.toLowerCase()
       );
     }
 
     results.push(...filtered);
-    page++;
+
+    // Stop once we have enough results
+    if (results.length >= count) break;
   }
 
   return results.slice(0, count);
@@ -96,32 +121,49 @@ export async function listIssues(
   repo: string,
   count: number = 10,
   filters?: { state?: string; creator?: string }
-): Promise<GitHubIssue[]> {
-  const actualIssues: GitHubIssue[] = [];
-  let page = 1;
-  const perPage = 100; // Max per page
+): Promise<GitHubIssueList> {
+  const { owner, repo: repoName } = parseRepo(repo);
 
-  // Build API query with filters
-  const apiState = filters?.state || "all";
-  const creatorParam = filters?.creator ? `&creator=${filters.creator}` : "";
+  // Build API query parameters
+  const apiState = (filters?.state || "all") as "open" | "closed" | "all";
+  const params: Parameters<typeof octokit.issues.listForRepo>[0] = {
+    owner,
+    repo: repoName,
+    state: apiState,
+    per_page: 100,
+    sort: "created",
+    direction: "desc",
+  };
 
-  // Keep fetching pages until we have enough issues or run out of items
-  while (actualIssues.length < count && page <= 10) {
-    // Limit to 10 pages max
-    const items = await githubFetch<GitHubIssue[]>(
-      `/repos/${repo}/issues?state=${apiState}${creatorParam}&per_page=${perPage}&page=${page}&sort=created&direction=desc`
-    );
+  if (filters?.creator) {
+    params.creator = filters.creator;
+  }
+
+  const actualIssues: GitHubIssueList = [];
+  let pageCount = 0;
+  const maxPages = 10; // Limit pagination to avoid timeouts
+
+  // Use Octokit's pagination iterator
+  const iterator = octokit.paginate.iterator(
+    octokit.issues.listForRepo,
+    params
+  );
+
+  for await (const { data: items } of iterator) {
+    pageCount++;
+
+    // Stop if we've fetched too many pages
+    if (pageCount > maxPages) break;
 
     // No more items available
-    if (items.length === 0) {
-      break;
-    }
+    if (items.length === 0) break;
 
-    // Filter out pull requests
+    // Filter out pull requests (issues endpoint returns both)
     const issues = items.filter(item => !item.pull_request);
     actualIssues.push(...issues);
 
-    page++;
+    // Stop once we have enough results
+    if (actualIssues.length >= count) break;
   }
 
   return actualIssues.slice(0, count);

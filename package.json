@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@connectrpc/connect-node": "^2.1.0",
+    "@octokit/rest": "^22.0.1",
+    "@octokit/webhooks-types": "^7.6.1",
     "@towns-protocol/bot": "^0.0.404",
     "@towns-protocol/proto": "^0.0.404",
     "@towns-protocol/web3": "^0.0.404",

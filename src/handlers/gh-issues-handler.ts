@@ -51,7 +51,7 @@ export async function handleGhIssues(
       .map(issue => {
         const status = issue.state === "open" ? "🟢 Open" : "✅ Closed";
         const issueLink = `[#${issue.number}](${issue.html_url})`;
-        return `• ${issueLink} ${status} - **${issue.title}** by ${issue.user.login}`;
+        return `• ${issueLink} ${status} - **${issue.title}** by ${issue.user?.login || "Unknown"}`;
       })
       .join("\n\n");
 
@@ -61,7 +61,9 @@ export async function handleGhIssues(
       issueList;
 
     await handler.sendMessage(channelId, message);
-  } catch (error: any) {
-    await handler.sendMessage(channelId, `❌ Error: ${error.message}`);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    await handler.sendMessage(channelId, `❌ Error: ${message}`);
   }
 }

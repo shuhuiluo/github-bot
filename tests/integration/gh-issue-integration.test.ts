@@ -68,7 +68,7 @@ describe("gh_issue handler - Integration", () => {
 
     // Should get a proper error message
     expect(message).toContain("❌ Error:");
-    expect(message).toContain("404");
+    expect(message).toContain("Not Found");
 
     console.log("\n❌ Error message for non-existent issue:");
     console.log(message);

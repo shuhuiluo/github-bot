@@ -60,7 +60,7 @@ export async function handleGhPrs(
               ? "✅ Merged"
               : "❌ Closed";
         const prLink = `[#${pr.number}](${pr.html_url})`;
-        return `• ${prLink} ${status} - **${pr.title}** by ${pr.user.login}`;
+        return `• ${prLink} ${status} - **${pr.title}** by ${pr.user?.login || "Unknown"}`;
       })
       .join("\n\n");
 
@@ -70,7 +70,9 @@ export async function handleGhPrs(
       prList;
 
     await handler.sendMessage(channelId, message);
-  } catch (error: any) {
-    await handler.sendMessage(channelId, `❌ Error: ${error.message}`);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    await handler.sendMessage(channelId, `❌ Error: ${message}`);
   }
 }
