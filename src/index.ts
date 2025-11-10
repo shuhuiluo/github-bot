@@ -5,8 +5,6 @@ import commands from "./commands";
 import crypto from "node:crypto";
 import { handleGhIssue } from "./handlers/gh-issue-handler";
 import { handleGhPr } from "./handlers/gh-pr-handler";
-import { handleGhPrs } from "./handlers/gh-prs-handler";
-import { handleGhIssues } from "./handlers/gh-issues-handler";
 import { handleGithubSubscription } from "./handlers/github-subscription-handler";
 import {
   formatPullRequest,
@@ -55,10 +53,10 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
       "• `/github unsubscribe owner/repo` - Unsubscribe from a repository\n" +
       "• `/github status` - Show current subscriptions\n\n" +
       "**Query Commands:**\n" +
-      "• `/gh_pr owner/repo #123 [--full]` - Show pull request details\n" +
-      "• `/gh_issue owner/repo #123 [--full]` - Show issue details\n" +
-      "• `/gh_prs owner/repo [count] [--state=...] [--author=...]` - List PRs\n" +
-      "• `/gh_issues owner/repo [count] [--state=...] [--creator=...]` - List issues\n" +
+      "• `/gh_pr owner/repo #123 [--full]` - Show single PR details\n" +
+      "• `/gh_pr list owner/repo [count] [--state=...] [--author=...]` - List PRs\n" +
+      "• `/gh_issue owner/repo #123 [--full]` - Show single issue details\n" +
+      "• `/gh_issue list owner/repo [count] [--state=...] [--creator=...]` - List issues\n" +
       "• Filters: --state=open|closed|merged|all, --author/--creator=username\n\n" +
       "**Other Commands:**\n" +
       "• `/help` - Show this help message"
@@ -75,10 +73,6 @@ bot.onSlashCommand("github", async (handler, event) => {
 bot.onSlashCommand("gh_pr", handleGhPr);
 
 bot.onSlashCommand("gh_issue", handleGhIssue);
-
-bot.onSlashCommand("gh_prs", handleGhPrs);
-
-bot.onSlashCommand("gh_issues", handleGhIssues);
 
 // ============================================================================
 // START BOT & SETUP HONO APP

@@ -17,28 +17,35 @@ Receive real-time notifications for:
 - **Reviews** - PR review submissions
 
 ### 💬 Slash Commands
-- `/github subscribe owner/repo` - Subscribe channel to repository events
-- `/github unsubscribe` - Unsubscribe from all repositories
-- `/github status` - Show current subscriptions
-- `/gh-pr owner/repo #123` - Display pull request details
-- `/gh-issue owner/repo #123` - Display issue details
-- `/help` - Show all available commands
-- `/time` - Get current time
 
-### 🔗 Auto-Unfurl (Bonus Feature)
-Paste GitHub URLs and the bot automatically expands them with details:
-- Pull request links
-- Issue links
+**Subscription Management:**
+- `/github subscribe owner/repo` - Subscribe channel to repository events
+- `/github unsubscribe owner/repo` - Unsubscribe from a repository
+- `/github status` - Show current subscriptions
+
+**Query Commands:**
+- `/gh_pr owner/repo #123 [--full]` - Display single pull request details
+- `/gh_pr list owner/repo [count] [--state=...] [--author=...]` - List recent pull requests
+- `/gh_issue owner/repo #123 [--full]` - Display single issue details
+- `/gh_issue list owner/repo [count] [--state=...] [--creator=...]` - List recent issues
+
+**Filters:**
+- `--state=open|closed|merged|all` - Filter by state (merged only for PRs)
+- `--author=username` - Filter PRs by author
+- `--creator=username` - Filter issues by creator
+
+**Other:**
+- `/help` - Show all available commands
 
 ## Features Demonstrated
 
 - External webhook integration (GitHub → Towns)
 - Subscription management (channel-based)
-- GitHub API integration (read-only)
+- GitHub API integration via official Octokit SDK
 - Webhook signature verification
 - Multi-event formatters
-- URL pattern detection and auto-unfurling
 - Real-time notifications to multiple channels
+- Advanced filtering for PRs and issues (by state, author, creator)
 
 ## Setup
 
@@ -52,7 +59,7 @@ Paste GitHub URLs and the bot automatically expands them with details:
 1. **Clone and install dependencies**
    ```bash
    git clone <your-repo>
-   cd bet-bot
+   cd github-bot
    bun install
    ```
 
@@ -157,19 +164,29 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
 
 ### Query GitHub Data
 
+**Show single PR or issue:**
 ```
-/gh-pr facebook/react 123      # Show PR details
-/gh-issue facebook/react 456   # Show issue details
-/github status                 # Show subscriptions
+/gh_pr facebook/react 123         # Show PR details (summary)
+/gh_pr facebook/react #123 --full # Show PR with full description
+/gh_issue facebook/react 456      # Show issue details (summary)
+/gh_issue facebook/react #456 --full # Show issue with full description
 ```
 
-### Auto-Unfurl
+**List recent PRs or issues:**
+```
+/gh_pr list facebook/react 10                    # List 10 most recent PRs
+/gh_pr list facebook/react 5 --state=open        # List 5 open PRs
+/gh_pr list facebook/react 10 --author=gaearon   # List PRs by author
 
-Just paste a GitHub URL:
+/gh_issue list facebook/react 10                 # List 10 most recent issues
+/gh_issue list facebook/react 5 --state=closed   # List 5 closed issues
+/gh_issue list facebook/react 10 --creator=dan   # List issues by creator
 ```
-https://github.com/facebook/react/pull/28837
+
+**Check subscriptions:**
 ```
-The bot will automatically expand it with details.
+/github status                    # Show current subscriptions
+```
 
 ## Supported GitHub Events
 
@@ -212,9 +229,9 @@ src/
 
 ## Future Enhancements
 
-- [ ] SQLite/PostgreSQL persistence
-- [ ] Per-user OAuth for private repos
-- [ ] More slash commands (`/github search`, `/github releases`)
-- [ ] Scheduled digests (daily summary)
-- [ ] Thread organization for related events
-- [ ] Reaction-based actions (when Towns supports)
+- [ ] SQLite/PostgreSQL persistence for subscriptions
+- [ ] Per-user OAuth for private repository access
+- [ ] More slash commands (`/gh_pr search`, `/gh_release list`)
+- [ ] Scheduled digests (daily/weekly summaries)
+- [ ] Thread organization for related webhook events
+- [ ] Advanced filtering (labels, assignees, milestones)

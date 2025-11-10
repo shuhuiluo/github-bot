@@ -12,20 +12,11 @@ const commands = [
   {
     name: "gh_pr",
     description:
-      "Show GitHub pull request details (usage: /gh_pr owner/repo #123)",
+      "Show or list pull requests (usage: /gh_pr owner/repo #123 or /gh_pr list owner/repo)",
   },
   {
     name: "gh_issue",
-    description: "Show GitHub issue details (usage: /gh_issue owner/repo #123)",
-  },
-  {
-    name: "gh_prs",
-    description:
-      "List recent pull requests (usage: /gh_prs owner/repo [count])",
-  },
-  {
-    name: "gh_issues",
-    description: "List recent issues (usage: /gh_issues owner/repo [count])",
+    description: "Show or list issues (usage: /gh_issue owner/repo #123 or /gh_issue list owner/repo)",
   },
 ] as const satisfies PlainMessage<SlashCommand>[];
 
