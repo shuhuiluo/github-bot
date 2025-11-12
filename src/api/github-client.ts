@@ -197,35 +197,25 @@ export async function fetchRepoEvents(
   | { events: GitHubEvent[]; etag: string; notModified?: false }
   | { notModified: true; etag?: never; events?: never }
 > {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github.v3+json",
-  };
+  const { owner, repo: repoName } = parseRepo(repo);
 
-  if (GITHUB_TOKEN) {
-    headers.Authorization = `token ${GITHUB_TOKEN}`;
+  try {
+    // Use Octokit's request method to support ETag headers
+    const response = await octokit.request("GET /repos/{owner}/{repo}/events", {
+      owner,
+      repo: repoName,
+      headers: etag ? { "If-None-Match": etag } : {},
+    });
+
+    const events = response.data as GitHubEvent[];
+    const newEtag = response.headers.etag || "";
+
+    return { events, etag: newEtag };
+  } catch (error: any) {
+    // 304 Not Modified - no changes since last poll
+    if (error.status === 304) {
+      return { notModified: true };
+    }
+    throw error;
   }
-
-  if (etag) {
-    headers["If-None-Match"] = etag;
-  }
-
-  const response = await fetch(`${GITHUB_API}/repos/${repo}/events`, {
-    headers,
-  });
-
-  // 304 Not Modified - no changes since last poll
-  if (response.status === 304) {
-    return { notModified: true };
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `GitHub API error: ${response.status} ${response.statusText}`
-    );
-  }
-
-  const events = (await response.json()) as GitHubEvent[];
-  const newEtag = response.headers.get("ETag") || "";
-
-  return { events, etag: newEtag };
 }

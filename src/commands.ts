@@ -16,7 +16,8 @@ const commands = [
   },
   {
     name: "gh_issue",
-    description: "Show or list issues (usage: /gh_issue owner/repo #123 or /gh_issue list owner/repo)",
+    description:
+      "Show or list issues (usage: /gh_issue owner/repo #123 or /gh_issue list owner/repo)",
   },
 ] as const satisfies PlainMessage<SlashCommand>[];
 
