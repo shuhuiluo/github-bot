@@ -1,5 +1,5 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { Database } from "bun:sqlite";
+import { drizzle } from "drizzle-orm/bun-sqlite";
 import { eq, and } from "drizzle-orm";
 import { subscriptions, repoPollingState } from "./schema";
 
@@ -60,14 +60,15 @@ export class DatabaseService {
    * Unsubscribe a channel from a repository
    */
   async unsubscribe(channelId: string, repo: string): Promise<boolean> {
-    const result = await db
+    const result = db
       .delete(subscriptions)
       .where(
         and(
           eq(subscriptions.channelId, channelId),
           eq(subscriptions.repo, repo)
         )
-      );
+      )
+      .run() as unknown as { changes: number; lastInsertRowid: number };
 
     return result.changes > 0;
   }
