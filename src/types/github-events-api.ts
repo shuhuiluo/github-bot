@@ -19,7 +19,28 @@ type BaseGitHubEvent = Omit<OctokitEvent, "payload">;
  * Pull Request Event Payload
  */
 export interface PullRequestPayload {
-  action: string;
+  action:
+    | "assigned"
+    | "unassigned"
+    | "labeled"
+    | "unlabeled"
+    | "opened"
+    | "edited"
+    | "closed"
+    | "reopened"
+    | "synchronize"
+    | "converted_to_draft"
+    | "locked"
+    | "unlocked"
+    | "enqueued"
+    | "dequeued"
+    | "milestoned"
+    | "demilestoned"
+    | "ready_for_review"
+    | "review_requested"
+    | "review_request_removed"
+    | "auto_merge_enabled"
+    | "auto_merge_disabled";
   number?: number;
   pull_request?: {
     number: number;
@@ -41,7 +62,23 @@ export interface PullRequestEvent extends BaseGitHubEvent {
  * Issues Event Payload
  */
 export interface IssuesPayload {
-  action: string;
+  action:
+    | "opened"
+    | "edited"
+    | "deleted"
+    | "transferred"
+    | "pinned"
+    | "unpinned"
+    | "closed"
+    | "reopened"
+    | "assigned"
+    | "unassigned"
+    | "labeled"
+    | "unlabeled"
+    | "locked"
+    | "unlocked"
+    | "milestoned"
+    | "demilestoned";
   issue?: {
     number: number;
     title: string;
@@ -77,7 +114,14 @@ export interface PushEvent extends BaseGitHubEvent {
  * Release Event Payload
  */
 export interface ReleasePayload {
-  action: string;
+  action:
+    | "published"
+    | "unpublished"
+    | "created"
+    | "edited"
+    | "deleted"
+    | "prereleased"
+    | "released";
   release?: {
     tag_name: string;
     name: string | null;
@@ -97,7 +141,7 @@ export interface ReleaseEvent extends BaseGitHubEvent {
  * Workflow Run Event Payload
  */
 export interface WorkflowRunPayload {
-  action: string;
+  action: "requested" | "in_progress" | "completed";
   workflow_run?: {
     name: string;
     conclusion: string | null;
@@ -115,7 +159,7 @@ export interface WorkflowRunEvent extends BaseGitHubEvent {
  * Issue Comment Event Payload
  */
 export interface IssueCommentPayload {
-  action: string;
+  action: "created" | "edited" | "deleted";
   issue?: {
     number: number;
   };
@@ -137,7 +181,7 @@ export interface IssueCommentEvent extends BaseGitHubEvent {
  * Pull Request Review Event Payload
  */
 export interface PullRequestReviewPayload {
-  action: string;
+  action: "submitted" | "edited" | "dismissed";
   pull_request?: {
     number: number;
     title: string;

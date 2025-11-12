@@ -1,4 +1,3 @@
-import type { GitHubEventRaw } from "../api/github-client";
 import { fetchRepoEvents } from "../api/github-client";
 import { dbService } from "../db";
 import type { GitHubEvent } from "../types/github-events-api";
@@ -166,7 +165,7 @@ function formatEvent(event: GitHubEvent): string {
 
       if (!pr || !review) return "";
 
-      if (action === "created") {
+      if (action === "submitted") {
         let emoji = "👀";
         if (review.state === "approved") emoji = "✅";
         if (review.state === "changes_requested") emoji = "🔄";
@@ -348,17 +347,28 @@ export class PollingService {
         const message = formatEvent(event as unknown as GitHubEvent);
 
         if (message) {
-          // Send to all subscribed channels
-          for (const channelId of channels) {
-            try {
-              await this.sendMessageFn!(channelId, message);
-            } catch (error) {
+          // Send to all subscribed channels in parallel
+          // Use Promise.allSettled to attempt all channels independently
+          const sendPromises = channels.map(channelId =>
+            this.sendMessageFn!(channelId, message).then(
+              () => ({ status: "fulfilled" as const, channelId }),
+              error => ({ status: "rejected" as const, channelId, error })
+            )
+          );
+
+          const results = await Promise.allSettled(sendPromises);
+
+          // Log failures for each channel
+          results.forEach(result => {
+            if (result.status === "rejected") {
+              console.error(`Failed to send event to channel:`, result.reason);
+            } else if (result.value.status === "rejected") {
               console.error(
-                `Failed to send event to channel ${channelId}:`,
-                error
+                `Failed to send event to channel ${result.value.channelId}:`,
+                result.value.error
               );
             }
-          }
+          });
         }
       }
 
