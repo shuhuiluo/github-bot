@@ -339,8 +339,12 @@ export class PollingService {
       const eventsToSend = newEvents.reverse();
 
       for (const event of eventsToSend) {
-        // Cast raw API event to typed GitHubEvent for type-safe formatting
-        // The formatEvent function handles unknown event types by returning empty string
+        // TODO: Add runtime validation with Zod to safely parse GitHub API events
+        // Currently using unsafe cast which bypasses type safety at runtime.
+        // GitHub API could change or return malformed data, causing silent failures.
+        // Recommended: Create Zod schemas for event payloads, validate at API boundary,
+        // and gracefully skip invalid events with proper error logging.
+        // See: https://github.com/colinhacks/zod
         const message = formatEvent(event as unknown as GitHubEvent);
 
         if (message) {
