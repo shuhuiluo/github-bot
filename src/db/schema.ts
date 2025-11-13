@@ -9,6 +9,7 @@ export const subscriptions = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     channelId: text("channel_id").notNull(),
     repo: text("repo").notNull(), // Format: "owner/repo"
+    eventTypes: text("event_types").notNull().default("all"), // Comma-separated: "pr,issues,commits" or "all"
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   },
   table => ({

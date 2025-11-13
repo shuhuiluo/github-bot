@@ -7,6 +7,43 @@ import { dbService } from "../db";
 import type { GitHubEvent } from "../types/github-events-api";
 
 /**
+ * Map short event type names to GitHub event types
+ */
+const EVENT_TYPE_MAP: Record<string, string> = {
+  pr: "PullRequestEvent",
+  issues: "IssuesEvent",
+  commits: "PushEvent",
+  releases: "ReleaseEvent",
+  ci: "WorkflowRunEvent",
+  comments: "IssueCommentEvent",
+  reviews: "PullRequestReviewEvent",
+};
+
+/**
+ * Check if an event matches the subscription's event type filter
+ * @param eventType GitHub event type (e.g., "PullRequestEvent")
+ * @param subscriptionTypes Comma-separated event types (e.g., "pr,issues") or "all" or null
+ */
+function isEventTypeMatch(
+  eventType: string,
+  subscriptionTypes: string | null | undefined
+): boolean {
+  // Treat null/undefined or "all" as subscribing to all event types (backward compatibility)
+  if (!subscriptionTypes || subscriptionTypes === "all") return true;
+
+  const subscribedTypes = subscriptionTypes.split(",").map((t) => t.trim());
+
+  // Check if the event type matches any of the subscribed short names
+  for (const shortName of subscribedTypes) {
+    if (EVENT_TYPE_MAP[shortName] === eventType) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Format GitHub Events API events into human-readable messages
  * Events API has different structure than webhooks
  *
@@ -358,7 +395,8 @@ export class PollingService {
 
     if (newEvents.length > 0) {
       // Get all channels subscribed to this repo
-      const channels = await dbService.getRepoSubscribers(repo);
+      const channels: Array<{ channelId: string; eventTypes: string }> =
+        await dbService.getRepoSubscribers(repo);
 
       // Process events in chronological order (oldest first)
       const eventsToSend = newEvents.reverse();
@@ -413,9 +451,23 @@ export class PollingService {
         );
 
         if (message) {
-          // Send to all subscribed channels in parallel
+          // Filter channels based on their event type preferences
+          const channelsForEvent = channels.filter((channel) => {
+            const types = channel.eventTypes;
+            // Treat null or "all" as subscribing to all event types
+            if (!types || types === "all") return true;
+            // Check if event type matches any subscribed types
+            return types
+              .split(",")
+              .map((t) => t.trim())
+              .some((shortName) => EVENT_TYPE_MAP[shortName] === event.type);
+          });
+
+          if (channelsForEvent.length === 0) continue;
+
+          // Send to filtered channels in parallel
           // Use Promise.allSettled to attempt all channels independently
-          const sendPromises = channels.map(channelId =>
+          const sendPromises = channelsForEvent.map(({ channelId }) =>
             this.sendMessageFn!(channelId, message).then(
               () => ({ status: "fulfilled" as const, channelId }),
               error => ({ status: "rejected" as const, channelId, error })
