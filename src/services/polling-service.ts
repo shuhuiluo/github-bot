@@ -1,47 +1,73 @@
-import { fetchRepoEvents } from "../api/github-client";
+import {
+  fetchRepoEvents,
+  getPullRequest,
+  type GitHubPullRequest,
+} from "../api/github-client";
 import { dbService } from "../db";
 import type { GitHubEvent } from "../types/github-events-api";
 
 /**
  * Format GitHub Events API events into human-readable messages
  * Events API has different structure than webhooks
+ *
+ * Note: Events API returns minimal PR objects without title/html_url.
+ * Full PR details are passed via prDetailsMap (fetched upfront in parallel).
  */
-function formatEvent(event: GitHubEvent): string {
+function formatEvent(
+  event: GitHubEvent,
+  prDetailsMap: Map<number, GitHubPullRequest>
+): string {
   const { type, payload, actor, repo } = event;
 
   switch (type) {
     case "PullRequestEvent": {
-      const { action, pull_request: pr } = payload;
+      const { action, pull_request: pr, number } = payload;
 
-      if (!pr) return "";
+      if (!pr || !number) return "";
+
+      // HTML URL: https://github.com/{repo}/pull/{number}
+      const htmlUrl = `https://github.com/${repo.name}/pull/${number}`;
+
+      // Look up full PR details from map
+      const fullPr = prDetailsMap.get(number);
+
+      if (!fullPr) {
+        // Fallback if PR details not available
+        return (
+          `🔔 **Pull Request ${action}**\n` +
+          `**${repo.name}** #${number}\n` +
+          `👤 ${actor.login}\n` +
+          `🔗 ${htmlUrl}`
+        );
+      }
 
       if (action === "opened") {
         return (
           `🔔 **Pull Request Opened**\n` +
-          `**${repo.name}** #${pr.number}\n\n` +
-          `**${pr.title}**\n` +
+          `**${repo.name}** #${number}\n\n` +
+          `**${fullPr.title}**\n` +
           `👤 ${actor.login}\n` +
-          `🔗 ${pr.html_url}`
+          `🔗 ${htmlUrl}`
         );
       }
 
-      if (action === "closed" && pr.merged) {
+      if (action === "closed" && fullPr.merged) {
         return (
           `✅ **Pull Request Merged**\n` +
-          `**${repo.name}** #${pr.number}\n\n` +
-          `**${pr.title}**\n` +
+          `**${repo.name}** #${number}\n\n` +
+          `**${fullPr.title}**\n` +
           `👤 ${actor.login}\n` +
-          `🔗 ${pr.html_url}`
+          `🔗 ${htmlUrl}`
         );
       }
 
-      if (action === "closed" && !pr.merged) {
+      if (action === "closed" && !fullPr.merged) {
         return (
           `❌ **Pull Request Closed**\n` +
-          `**${repo.name}** #${pr.number}\n\n` +
-          `**${pr.title}**\n` +
+          `**${repo.name}** #${number}\n\n` +
+          `**${fullPr.title}**\n` +
           `👤 ${actor.login}\n` +
-          `🔗 ${pr.html_url}`
+          `🔗 ${htmlUrl}`
         );
       }
       return "";
@@ -337,6 +363,43 @@ export class PollingService {
       // Process events in chronological order (oldest first)
       const eventsToSend = newEvents.reverse();
 
+      // Fetch all PR details upfront (in parallel) for events that need them
+      const prNumbers = new Set<number>();
+      for (const event of eventsToSend) {
+        if (
+          event.type === "PullRequestEvent" &&
+          event.payload &&
+          typeof event.payload === "object" &&
+          "number" in event.payload
+        ) {
+          prNumbers.add(event.payload.number as number);
+        }
+      }
+
+      // Fetch PR details in parallel
+      const prDetailsMap = new Map<number, GitHubPullRequest>();
+      if (prNumbers.size > 0) {
+        const prFetchPromises = Array.from(prNumbers).map(async prNumber => {
+          try {
+            const prDetails = await getPullRequest(repo, prNumber.toString());
+            return { prNumber, prDetails };
+          } catch (error) {
+            console.error(
+              `Failed to fetch PR #${prNumber} for ${repo}:`,
+              error
+            );
+            return null;
+          }
+        });
+
+        const prResults = await Promise.all(prFetchPromises);
+        for (const result of prResults) {
+          if (result) {
+            prDetailsMap.set(result.prNumber, result.prDetails);
+          }
+        }
+      }
+
       for (const event of eventsToSend) {
         // TODO: Add runtime validation with Zod to safely parse GitHub API events
         // Currently using unsafe cast which bypasses type safety at runtime.
@@ -344,7 +407,10 @@ export class PollingService {
         // Recommended: Create Zod schemas for event payloads, validate at API boundary,
         // and gracefully skip invalid events with proper error logging.
         // See: https://github.com/colinhacks/zod
-        const message = formatEvent(event as unknown as GitHubEvent);
+        const message = formatEvent(
+          event as unknown as GitHubEvent,
+          prDetailsMap
+        );
 
         if (message) {
           // Send to all subscribed channels in parallel
