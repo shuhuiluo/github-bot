@@ -10,15 +10,16 @@ interface GithubSubscriptionEvent {
 
 /**
  * Parse event types from --events flag
- * Returns "all" if no flag, or comma-separated event types
+ * Returns default types if no flag, or comma-separated event types
  */
 function parseEventTypes(args: string[]): string {
+  const defaultTypes = "pr,issues,commits,releases";
   const eventsIndex = args.findIndex(arg => arg.startsWith("--events"));
-  if (eventsIndex === -1) return "all";
+  if (eventsIndex === -1) return defaultTypes;
 
   // Check for --events=pr,issues format
   if (args[eventsIndex].includes("=")) {
-    return args[eventsIndex].split("=")[1] || "all";
+    return args[eventsIndex].split("=")[1] || defaultTypes;
   }
 
   // Check for --events pr,issues format (next arg)
@@ -26,7 +27,7 @@ function parseEventTypes(args: string[]): string {
     return args[eventsIndex + 1];
   }
 
-  return "all";
+  return defaultTypes;
 }
 
 /**

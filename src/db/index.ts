@@ -12,7 +12,7 @@ sqlite.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id TEXT NOT NULL,
     repo TEXT NOT NULL,
-    event_types TEXT NOT NULL DEFAULT 'all',
+    event_types TEXT NOT NULL DEFAULT 'pr,issues,commits,releases',
     created_at INTEGER NOT NULL,
     UNIQUE(channel_id, repo)
   );
@@ -36,12 +36,12 @@ export class DatabaseService {
   /**
    * Subscribe a channel to a repository
    * Handles concurrent requests gracefully with UNIQUE constraint
-   * @param eventTypes Comma-separated event types (e.g., "pr,issues") or "all" (default)
+   * @param eventTypes Comma-separated event types (default: "pr,issues,commits,releases")
    */
   async subscribe(
     channelId: string,
     repo: string,
-    eventTypes: string = "all"
+    eventTypes: string = "pr,issues,commits,releases"
   ): Promise<void> {
     try {
       await db.insert(subscriptions).values({
@@ -97,10 +97,10 @@ export class DatabaseService {
       .from(subscriptions)
       .where(eq(subscriptions.channelId, channelId));
 
-    // Ensure eventTypes is never null (default to "all")
+    // Ensure eventTypes is never null (default to common event types)
     return results.map(r => ({
       repo: r.repo,
-      eventTypes: (r.eventTypes || "all") as string,
+      eventTypes: (r.eventTypes || "pr,issues,commits,releases") as string,
     }));
   }
 
@@ -118,10 +118,10 @@ export class DatabaseService {
       .from(subscriptions)
       .where(eq(subscriptions.repo, repo));
 
-    // Ensure eventTypes is never null (default to "all")
+    // Ensure eventTypes is never null (default to common event types)
     return results.map(r => ({
       channelId: r.channelId,
-      eventTypes: (r.eventTypes || "all") as string,
+      eventTypes: (r.eventTypes || "pr,issues,commits,releases") as string,
     }));
   }
 
