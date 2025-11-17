@@ -4,11 +4,12 @@ import {
   type GitHubPullRequest,
 } from "../api/github-client";
 import { dbService } from "../db";
-import type { GitHubEvent } from "../types/github-events-api";
+import { validateGitHubEvent } from "../types/events-api";
 import { formatEvent } from "../formatters/events-api";
 
 /**
  * Map short event type names to GitHub event types
+ * Values can be comma-separated to map one short name to multiple event types
  */
 const EVENT_TYPE_MAP: Record<string, string> = {
   pr: "PullRequestEvent",
@@ -18,6 +19,8 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   ci: "WorkflowRunEvent",
   comments: "IssueCommentEvent",
   reviews: "PullRequestReviewEvent",
+  branches: "CreateEvent,DeleteEvent",
+  review_comments: "PullRequestReviewCommentEvent",
 };
 
 /**
@@ -37,7 +40,8 @@ function isEventTypeMatch(
 
   // Check if the event type matches any of the subscribed short names
   for (const shortName of subscribedTypes) {
-    if (EVENT_TYPE_MAP[shortName] === eventType) {
+    const mappedTypes = EVENT_TYPE_MAP[shortName]?.split(",") ?? [];
+    if (mappedTypes.includes(eventType)) {
       return true;
     }
   }
@@ -234,16 +238,13 @@ export class PollingService {
       }
 
       for (const event of eventsToSend) {
-        // TODO: Add runtime validation with Zod to safely parse GitHub API events
-        // Currently using unsafe cast which bypasses type safety at runtime.
-        // GitHub API could change or return malformed data, causing silent failures.
-        // Recommended: Create Zod schemas for event payloads, validate at API boundary,
-        // and gracefully skip invalid events with proper error logging.
-        // See: https://github.com/colinhacks/zod
-        const message = formatEvent(
-          event as unknown as GitHubEvent,
-          prDetailsMap
-        );
+        // Validate event against schema
+        const validatedEvent = validateGitHubEvent(event);
+        if (!validatedEvent) {
+          continue; // Skip invalid event (error already logged)
+        }
+
+        const message = formatEvent(validatedEvent, prDetailsMap);
 
         if (message) {
           // Filter channels based on their event type preferences

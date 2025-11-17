@@ -8,7 +8,7 @@
  * - PR objects are minimal, full details passed via prDetailsMap
  */
 
-import type { GitHubEvent } from "../types/github-events-api";
+import type { GitHubEvent } from "../types/events-api";
 import type { GitHubPullRequest } from "../api/github-client";
 import { buildMessage } from "./shared";
 
@@ -200,7 +200,7 @@ export function formatEvent(
 
       if (!pr || !review) return "";
 
-      if (action === "submitted") {
+      if (action === "created") {
         // Look up full PR details from map
         const fullPr = prDetailsMap.get(pr.number);
 
@@ -224,6 +224,48 @@ export function formatEvent(
         });
       }
       return "";
+    }
+
+    case "CreateEvent": {
+      const { ref, ref_type } = payload;
+
+      if (!ref || !ref_type) return "";
+
+      return (
+        `🌿 **${ref_type === "tag" ? "Tag" : "Branch"} Created**\n` +
+        `**${repo.name}**\n` +
+        `📝 \`${ref}\`\n` +
+        `👤 ${actor.login}`
+      );
+    }
+
+    case "DeleteEvent": {
+      const { ref, ref_type } = payload;
+
+      if (!ref || !ref_type) return "";
+
+      return (
+        `🗑️ **${ref_type === "tag" ? "Tag" : "Branch"} Deleted**\n` +
+        `**${repo.name}**\n` +
+        `📝 \`${ref}\`\n` +
+        `👤 ${actor.login}`
+      );
+    }
+
+    case "PullRequestReviewCommentEvent": {
+      const { action, pull_request: pr, comment } = payload;
+
+      if (!pr || !comment || action !== "created") return "";
+
+      const shortComment = comment.body.split("\n")[0].substring(0, 100);
+
+      return (
+        `💬 **Review Comment on PR #${pr.number}**\n` +
+        `**${repo.name}**\n\n` +
+        `"${shortComment}${comment.body.length > 100 ? "..." : ""}"\n` +
+        `👤 ${comment.user?.login ?? actor.login}\n` +
+        `🔗 ${comment.html_url}`
+      );
     }
 
     // Ignore other event types for now
