@@ -2,9 +2,25 @@ import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { eq, and } from "drizzle-orm";
 import { subscriptions, repoPollingState } from "./schema";
+import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 const sqlite = new Database("github-bot.db");
 export const db = drizzle(sqlite);
+
+// Migration: Add event_types column if it doesn't exist
+const tableInfo = sqlite
+  .prepare("PRAGMA table_info(subscriptions)")
+  .all() as Array<{ name: string }>;
+
+const hasEventTypesColumn = tableInfo.some(col => col.name === "event_types");
+
+if (!hasEventTypesColumn && tableInfo.length > 0) {
+  console.log("Migrating subscriptions table: adding event_types column");
+  sqlite.exec(`
+    ALTER TABLE subscriptions
+    ADD COLUMN event_types TEXT NOT NULL DEFAULT '${DEFAULT_EVENT_TYPES}'
+  `);
+}
 
 // Create tables if they don't exist
 sqlite.exec(`
@@ -12,7 +28,7 @@ sqlite.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id TEXT NOT NULL,
     repo TEXT NOT NULL,
-    event_types TEXT NOT NULL DEFAULT 'pr,issues,commits,releases',
+    event_types TEXT NOT NULL DEFAULT '${DEFAULT_EVENT_TYPES}',
     created_at INTEGER NOT NULL,
     UNIQUE(channel_id, repo)
   );
@@ -36,12 +52,12 @@ export class DatabaseService {
   /**
    * Subscribe a channel to a repository
    * Handles concurrent requests gracefully with UNIQUE constraint
-   * @param eventTypes Comma-separated event types (default: "pr,issues,commits,releases")
+   * @param eventTypes - Comma-separated event types
    */
   async subscribe(
     channelId: string,
     repo: string,
-    eventTypes: string = "pr,issues,commits,releases"
+    eventTypes: string = DEFAULT_EVENT_TYPES
   ): Promise<void> {
     try {
       await db.insert(subscriptions).values({
@@ -100,7 +116,7 @@ export class DatabaseService {
     // Ensure eventTypes is never null (default to common event types)
     return results.map(r => ({
       repo: r.repo,
-      eventTypes: r.eventTypes || "pr,issues,commits,releases",
+      eventTypes: r.eventTypes || DEFAULT_EVENT_TYPES,
     }));
   }
 
@@ -121,7 +137,7 @@ export class DatabaseService {
     // Ensure eventTypes is never null (default to common event types)
     return results.map(r => ({
       channelId: r.channelId,
-      eventTypes: r.eventTypes || "pr,issues,commits,releases",
+      eventTypes: r.eventTypes || DEFAULT_EVENT_TYPES,
     }));
   }
 

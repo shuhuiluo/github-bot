@@ -2,6 +2,10 @@ import type { BotHandler } from "@towns-protocol/bot";
 import { validateRepo } from "../api/github-client";
 import { stripMarkdown } from "../utils/stripper";
 import { dbService } from "../db";
+import {
+  ALLOWED_EVENT_TYPES,
+  DEFAULT_EVENT_TYPES,
+} from "../constants/event-types";
 
 interface GithubSubscriptionEvent {
   channelId: string;
@@ -9,38 +13,24 @@ interface GithubSubscriptionEvent {
 }
 
 /**
- * Allowed GitHub event types for subscriptions
- */
-const ALLOWED_EVENT_TYPES = [
-  "pr",
-  "issues",
-  "commits",
-  "releases",
-  "ci",
-  "comments",
-  "reviews",
-] as const;
-
-/**
  * Parse and validate event types from --events flag
  * Returns default types if no flag, or comma-separated validated event types
  * @throws Error if any event type is invalid
  */
 function parseEventTypes(args: string[]): string {
-  const defaultTypes = "pr,issues,commits,releases";
   const eventsIndex = args.findIndex(arg => arg.startsWith("--events"));
-  if (eventsIndex === -1) return defaultTypes;
+  if (eventsIndex === -1) return DEFAULT_EVENT_TYPES;
 
   let rawEventTypes: string;
 
   // Check for --events=pr,issues format
   if (args[eventsIndex].includes("=")) {
-    rawEventTypes = args[eventsIndex].split("=")[1] || defaultTypes;
+    rawEventTypes = args[eventsIndex].split("=")[1] || DEFAULT_EVENT_TYPES;
   } else if (eventsIndex + 1 < args.length) {
     // Check for --events pr,issues format (next arg)
     rawEventTypes = args[eventsIndex + 1];
   } else {
-    return defaultTypes;
+    return DEFAULT_EVENT_TYPES;
   }
 
   // Parse and validate event types
@@ -81,7 +71,6 @@ function parseEventTypes(args: string[]): string {
  * Format event types for display
  */
 function formatEventTypes(eventTypes: string): string {
-  if (eventTypes === "all") return "all events";
   return eventTypes
     .split(",")
     .map(t => t.trim())
