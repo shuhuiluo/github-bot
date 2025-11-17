@@ -9,6 +9,7 @@ import { formatEvent } from "../formatters/events-api";
 
 /**
  * Map short event type names to GitHub event types
+ * Values can be comma-separated to map one short name to multiple event types
  */
 const EVENT_TYPE_MAP: Record<string, string> = {
   pr: "PullRequestEvent",
@@ -18,6 +19,8 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   ci: "WorkflowRunEvent",
   comments: "IssueCommentEvent",
   reviews: "PullRequestReviewEvent",
+  branches: "CreateEvent,DeleteEvent",
+  review_comments: "PullRequestReviewCommentEvent",
 };
 
 /**
@@ -37,7 +40,8 @@ function isEventTypeMatch(
 
   // Check if the event type matches any of the subscribed short names
   for (const shortName of subscribedTypes) {
-    if (EVENT_TYPE_MAP[shortName] === eventType) {
+    const mappedTypes = EVENT_TYPE_MAP[shortName]?.split(",") ?? [];
+    if (mappedTypes.includes(eventType)) {
       return true;
     }
   }

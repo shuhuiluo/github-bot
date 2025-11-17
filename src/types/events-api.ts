@@ -63,12 +63,14 @@ export const PullRequestPayloadSchema = z.object({
   pull_request: z
     .object({
       number: z.number(),
-      title: z.string(),
-      html_url: z.string(),
-      user: z.object({
-        login: z.string(),
-      }),
-      merged: z.boolean(),
+      title: z.string().optional(),
+      html_url: z.string().optional(),
+      user: z
+        .object({
+          login: z.string(),
+        })
+        .optional(),
+      merged: z.boolean().optional(),
     })
     .optional(),
 });
@@ -229,20 +231,22 @@ export interface IssueCommentEvent extends BaseGitHubEvent {
  * Pull Request Review Event Payload
  */
 export const PullRequestReviewPayloadSchema = z.object({
-  action: z.enum(["submitted", "edited", "dismissed"]),
+  action: z.enum(["created", "updated", "dismissed"]),
   pull_request: z
     .object({
       number: z.number(),
-      title: z.string(),
+      title: z.string().optional(),
     })
     .optional(),
   review: z
     .object({
       state: z.string(),
-      html_url: z.string(),
-      user: z.object({
-        login: z.string(),
-      }),
+      html_url: z.string().optional(),
+      user: z
+        .object({
+          login: z.string(),
+        })
+        .optional(),
     })
     .optional(),
 });
@@ -257,6 +261,75 @@ export interface PullRequestReviewEvent extends BaseGitHubEvent {
 }
 
 /**
+ * Create Event Payload (branch/tag creation)
+ */
+export const CreatePayloadSchema = z.object({
+  ref: z.string().optional(),
+  ref_type: z.enum(["branch", "tag"]).optional(),
+  master_branch: z.string().optional(),
+  description: z.string().nullable().optional(),
+  pusher_type: z.string().optional(),
+});
+
+export type CreatePayload = z.infer<typeof CreatePayloadSchema>;
+
+export interface CreateEvent extends BaseGitHubEvent {
+  type: "CreateEvent";
+  payload: CreatePayload;
+}
+
+/**
+ * Delete Event Payload (branch/tag deletion)
+ */
+export const DeletePayloadSchema = z.object({
+  ref: z.string().optional(),
+  ref_type: z.enum(["branch", "tag"]).optional(),
+  pusher_type: z.string().optional(),
+});
+
+export type DeletePayload = z.infer<typeof DeletePayloadSchema>;
+
+export interface DeleteEvent extends BaseGitHubEvent {
+  type: "DeleteEvent";
+  payload: DeletePayload;
+}
+
+/**
+ * Pull Request Review Comment Event Payload (code review comments)
+ */
+export const PullRequestReviewCommentPayloadSchema = z.object({
+  action: z.enum(["created", "edited", "deleted"]),
+  pull_request: z
+    .object({
+      number: z.number(),
+    })
+    .optional(),
+  comment: z
+    .object({
+      body: z.string(),
+      path: z.string().optional(),
+      position: z.number().nullable().optional(),
+      line: z.number().nullable().optional(),
+      html_url: z.string(),
+      user: z
+        .object({
+          login: z.string(),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+
+export type PullRequestReviewCommentPayload = z.infer<
+  typeof PullRequestReviewCommentPayloadSchema
+>;
+
+export interface PullRequestReviewCommentEvent extends BaseGitHubEvent {
+  type: "PullRequestReviewCommentEvent";
+  payload: PullRequestReviewCommentPayload;
+}
+
+/**
  * Discriminated union of all supported GitHub Events
  */
 export type GitHubEvent =
@@ -266,7 +339,10 @@ export type GitHubEvent =
   | ReleaseEvent
   | WorkflowRunEvent
   | IssueCommentEvent
-  | PullRequestReviewEvent;
+  | PullRequestReviewEvent
+  | CreateEvent
+  | DeleteEvent
+  | PullRequestReviewCommentEvent;
 
 /**
  * Zod schema for validating GitHub Events
@@ -300,6 +376,18 @@ export const GitHubEventSchema = z.discriminatedUnion("type", [
   BaseEventSchema.extend({
     type: z.literal("PullRequestReviewEvent"),
     payload: PullRequestReviewPayloadSchema,
+  }),
+  BaseEventSchema.extend({
+    type: z.literal("CreateEvent"),
+    payload: CreatePayloadSchema,
+  }),
+  BaseEventSchema.extend({
+    type: z.literal("DeleteEvent"),
+    payload: DeletePayloadSchema,
+  }),
+  BaseEventSchema.extend({
+    type: z.literal("PullRequestReviewCommentEvent"),
+    payload: PullRequestReviewCommentPayloadSchema,
   }),
 ]);
 
