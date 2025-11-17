@@ -218,7 +218,7 @@ export function formatEvent(
           header: `PR Review: ${review.state.replace("_", " ")}`,
           repository: repo.name,
           number: pr.number,
-          title: fullPr?.title ?? pr.title,
+          title: fullPr?.title ?? `PR #${pr.number}`,
           user: actor.login,
           url: htmlUrl,
         });
