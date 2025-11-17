@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, unique } from "drizzle-orm/sqlite-core";
+import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**
  * Stores channel subscriptions to GitHub repositories
@@ -9,6 +10,7 @@ export const subscriptions = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     channelId: text("channel_id").notNull(),
     repo: text("repo").notNull(), // Format: "owner/repo"
+    eventTypes: text("event_types").notNull().default(DEFAULT_EVENT_TYPES), // Comma-separated event types
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   },
   table => ({
