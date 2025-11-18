@@ -2,16 +2,11 @@
   "name": "Towns GitHub Bot",
   "url": "https://github.com/HereNotThere/bot-github",
   "hook_attributes": {
-    "url": "https://your-bot.onrender.com/github-webhook",
+    "url": "https://github-bot-alpha.onrender.com/github-webhook",
     "active": true
   },
-  "redirect_url": "https://your-bot.onrender.com/github-app/callback",
-  "callback_urls": [
-    "https://your-bot.onrender.com/github-app/callback"
-  ],
-  "setup_url": "https://your-bot.onrender.com/github-app/setup",
   "description": "Real-time GitHub notifications for Towns Protocol channels. Subscribe to repositories and receive instant webhook notifications for PRs, issues, commits, releases, and more.",
-  "public": false,
+  "public": true,
   "default_permissions": {
     "contents": "read",
     "issues": "read",
