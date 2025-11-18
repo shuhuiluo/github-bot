@@ -91,7 +91,7 @@ import { Webhooks } from "@octokit/webhooks";
 
 export class GitHubApp {
   private app: App;
-  private webhooks: Webhooks;
+  public webhooks: Webhooks; // Public for route registration in src/index.ts
 
   constructor() {
     this.app = new App({
@@ -118,6 +118,8 @@ export class GitHubApp {
 
   private registerWebhookHandlers() {
     // Event handlers registration
+    // Note: The handleXYZ methods below delegate to EventProcessor methods
+    // for routing to formatters and sending to subscribed Towns channels
     this.webhooks.on("pull_request", this.handlePullRequest.bind(this));
     this.webhooks.on("push", this.handlePush.bind(this));
     this.webhooks.on("issues", this.handleIssues.bind(this));
@@ -134,6 +136,8 @@ export class GitHubApp {
 
 ```typescript
 // Idempotency tracking to prevent duplicate processing
+// NOTE: Production deployments MUST use the webhook_deliveries database table
+// instead of in-memory Set to ensure idempotency across restarts and replicas
 export class WebhookProcessor {
   private processedDeliveries: Set<string> = new Set();
 
@@ -152,6 +156,8 @@ export class WebhookProcessor {
 ### 2. Raw Body Requirements for Webhook Verification
 
 **IMPORTANT**: Webhook signature verification requires the **raw, unmodified request body**.
+
+The webhook route is registered before any body-parsing middleware to guarantee access to the raw request body.
 
 When using `@octokit/webhooks` with Hono or Express, you must:
 1. Access the raw body buffer BEFORE any JSON parsing middleware
@@ -710,7 +716,7 @@ services:
 ### Required Components (All Must Be Implemented)
 
 - [ ] **GitHub App Backend** - Complete webhook server with all event handlers
-- [ ] **Authentication Logic** - JWT generation, installation tokens, caching
+- [ ] **Authentication Logic** - Use Octokit's built-in JWT/installation-token handling
 - [ ] **Octokit Integration** - App-authenticated API calls
 - [ ] **Installation Lifecycle** - Handle install/uninstall/permission changes
 - [ ] **Subscription System** - Map repos to channels with event filtering
