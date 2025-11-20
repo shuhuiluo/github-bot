@@ -1,5 +1,6 @@
 import { App } from "@octokit/app";
 import { Webhooks } from "@octokit/webhooks";
+import type { Octokit } from "@octokit/core";
 
 /**
  * GitHubApp - Core GitHub App integration
@@ -56,21 +57,20 @@ export class GitHubApp {
   }
 
   /**
-   * Get installation-scoped Octokit instance
+   * Get app-authenticated Octokit instance
    *
-   * Octokit internally handles:
-   * - JWT generation from private key
-   * - Installation token exchange
-   * - Token caching (tokens are cached until expiration)
+   * Uses JWT authentication for app-level operations such as:
+   * - Getting installation details
+   * - Listing installations
+   * - App management endpoints
    *
-   * @param installationId - GitHub App installation ID
-   * @returns Authenticated Octokit instance for the installation
+   * @returns JWT-authenticated Octokit instance
    */
-  async getInstallationOctokit(installationId: number) {
+  getAppOctokit(): Octokit {
     if (!this.app) {
       throw new Error("GitHub App not configured");
     }
-    return await this.app.getInstallationOctokit(installationId);
+    return this.app.octokit;
   }
 
   /**

@@ -36,7 +36,7 @@ const bot = await makeTownsBot(
 
 const githubApp = new GitHubApp();
 const webhookProcessor = new WebhookProcessor();
-const installationService = new InstallationService();
+const installationService = new InstallationService(githubApp);
 const oauthService = new GitHubOAuthService(githubApp);
 const oauthCleanupService = new OAuthCleanupService();
 
