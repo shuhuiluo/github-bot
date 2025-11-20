@@ -5,10 +5,7 @@ import type {
   InstallationPayload,
   InstallationRepositoriesPayload,
 } from "../types/webhooks";
-
-interface TownsBot {
-  sendMessage: (channelId: string, message: string) => Promise<unknown>;
-}
+import type { TownsBot } from "../types/bot";
 
 /**
  * InstallationService - Manages GitHub App installation lifecycle

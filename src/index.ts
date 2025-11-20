@@ -12,6 +12,7 @@ import { GitHubApp } from "./github-app/app";
 import { WebhookProcessor } from "./github-app/webhook-processor";
 import { InstallationService } from "./github-app/installation-service";
 import { EventProcessor } from "./github-app/event-processor";
+import { handleGitHubWebhook } from "./routes/github-webhook";
 
 await dbReady;
 console.log("✅ Database ready (schema ensured)");
@@ -136,70 +137,9 @@ app.use(logger());
 app.post("/webhook", jwtMiddleware, handler);
 
 // GitHub App webhook endpoint
-// IMPORTANT: Do not use body parsing middleware before this endpoint
-app.post("/github-webhook", async c => {
-  if (!githubApp.isEnabled()) {
-    return c.json({ error: "GitHub App not configured" }, 503);
-  }
-
-  // Get headers for webhook processing
-  const deliveryId = c.req.header("x-github-delivery");
-  const signature = c.req.header("x-hub-signature-256");
-  const event = c.req.header("x-github-event");
-
-  if (!deliveryId || !signature || !event) {
-    return c.json({ error: "Missing required headers" }, 400);
-  }
-
-  // Check idempotency
-  if (await webhookProcessor.isProcessed(deliveryId)) {
-    console.log(`Webhook ${deliveryId} already processed, skipping`);
-    return c.json({ message: "Already processed" }, 200);
-  }
-
-  try {
-    // Get raw body for signature verification
-    const body = await c.req.text();
-
-    // Use Octokit's built-in verification and processing
-    await githubApp.webhooks.verifyAndReceive({
-      id: deliveryId,
-      name: event as any,
-      signature: signature,
-      payload: body, // Must be raw string, not parsed JSON
-    });
-
-    // Mark as processed for idempotency
-    let installationId: number | undefined;
-    if (event.includes("installation")) {
-      try {
-        const parsed = JSON.parse(body) as { installation?: { id?: number } };
-        installationId = parsed.installation?.id;
-      } catch {
-        // Ignore parse errors
-      }
-    }
-    await webhookProcessor.markProcessed(
-      deliveryId,
-      installationId,
-      event,
-      "success"
-    );
-
-    return c.json({ ok: true });
-  } catch (error) {
-    console.error("Webhook processing error:", error);
-
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    // Don't mark as processed - allow GitHub to retry failed webhooks
-    if (errorMessage.includes("signature")) {
-      return c.json({ error: "Invalid signature" }, 401);
-    }
-    return c.json({ error: "Processing failed" }, 500);
-  }
-});
+app.post("/github-webhook", c =>
+  handleGitHubWebhook(c, githubApp, webhookProcessor)
+);
 
 // Health check endpoint
 app.get("/health", async c => {

@@ -19,10 +19,7 @@ import type {
   CreatePayload,
   DeletePayload,
 } from "../types/webhooks";
-
-interface TownsBot {
-  sendMessage: (channelId: string, message: string) => Promise<unknown>;
-}
+import type { TownsBot } from "../types/bot";
 
 /**
  * EventProcessor - Routes webhook events to formatters and sends to subscribed channels
