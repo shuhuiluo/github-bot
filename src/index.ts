@@ -112,6 +112,14 @@ if (githubApp.isEnabled()) {
     await eventProcessor.onBranchEvent(payload, "delete");
   });
 
+  githubApp.webhooks.on("fork", async ({ payload }) => {
+    await eventProcessor.onFork(payload);
+  });
+
+  githubApp.webhooks.on("watch", async ({ payload }) => {
+    await eventProcessor.onWatch(payload);
+  });
+
   console.log("✅ GitHub App webhooks registered");
 } else {
   console.log("⚠️  GitHub App not configured - running in polling-only mode");

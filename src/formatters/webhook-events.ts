@@ -11,6 +11,8 @@ import type {
   WorkflowRunPayload,
   IssueCommentPayload,
   PullRequestReviewPayload,
+  ForkPayload,
+  WatchPayload,
 } from "../types/webhooks";
 import { buildMessage } from "./shared";
 
@@ -179,6 +181,32 @@ export function formatPullRequestReview(
       `**${pull_request.title}**\n` +
       `👤 ${review.user?.login || "unknown"}\n` +
       `🔗 ${review.html_url}`
+    );
+  }
+
+  return "";
+}
+
+export function formatFork(payload: ForkPayload): string {
+  const { forkee, repository, sender } = payload;
+
+  return (
+    `🍴 **Repository Forked**\n` +
+    `**${repository.full_name}** → **${forkee.full_name}**\n` +
+    `👤 ${sender.login}\n` +
+    `🔗 ${forkee.html_url}`
+  );
+}
+
+export function formatWatch(payload: WatchPayload): string {
+  const { action, repository, sender } = payload;
+
+  if (action === "started") {
+    return (
+      `⭐ **Repository Starred**\n` +
+      `**${repository.full_name}**\n` +
+      `👤 ${sender.login}\n` +
+      `🔗 ${repository.html_url}`
     );
   }
 

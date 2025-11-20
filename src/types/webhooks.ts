@@ -23,3 +23,5 @@ export type InstallationRepositoriesPayload =
   WebhookPayload<"installation_repositories">;
 export type CreatePayload = WebhookPayload<"create">;
 export type DeletePayload = WebhookPayload<"delete">;
+export type ForkPayload = WebhookPayload<"fork">;
+export type WatchPayload = WebhookPayload<"watch">;

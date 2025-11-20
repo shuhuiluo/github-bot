@@ -6,6 +6,8 @@ import {
   formatWorkflowRun,
   formatIssueComment,
   formatPullRequestReview,
+  formatFork,
+  formatWatch,
 } from "../formatters/webhook-events";
 import type {
   PullRequestPayload,
@@ -17,6 +19,8 @@ import type {
   PullRequestReviewPayload,
   CreatePayload,
   DeletePayload,
+  ForkPayload,
+  WatchPayload,
 } from "../types/webhooks";
 import type { TownsBot } from "../types/bot";
 import type { SubscriptionService } from "../services/subscription-service";
@@ -392,6 +396,87 @@ export class EventProcessor {
       `${emoji} **${action} ${refType}** in ${repository.full_name}\n` +
       `\`${ref}\`\n` +
       `${repository.html_url}`;
+
+    // Send to all interested channels in parallel
+    await Promise.all(
+      interestedChannels.map(channel =>
+        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
+          console.error(`Failed to send to ${channel.channelId}:`, err.message);
+        })
+      )
+    );
+  }
+
+  /**
+   * Process fork webhook event
+   */
+  async onFork(event: ForkPayload) {
+    const { repository } = event;
+
+    console.log(`Processing fork event: ${repository.full_name}`);
+
+    // Get subscribed channels for this repo (webhook mode only)
+    const channels = await this.subscriptionService.getRepoSubscribers(
+      repository.full_name,
+      "webhook"
+    );
+
+    // Filter by event preferences (forks event type)
+    const interestedChannels = channels.filter(ch =>
+      ch.eventTypes.includes("forks")
+    );
+
+    if (interestedChannels.length === 0) {
+      console.log("No interested channels for fork event");
+      return;
+    }
+
+    // Format message using existing formatter
+    const message = formatFork(event);
+
+    // Send to all interested channels in parallel
+    await Promise.all(
+      interestedChannels.map(channel =>
+        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
+          console.error(`Failed to send to ${channel.channelId}:`, err.message);
+        })
+      )
+    );
+  }
+
+  /**
+   * Process watch webhook event (star)
+   */
+  async onWatch(event: WatchPayload) {
+    const { repository } = event;
+
+    console.log(`Processing watch event: ${repository.full_name}`);
+
+    // Get subscribed channels for this repo (webhook mode only)
+    const channels = await this.subscriptionService.getRepoSubscribers(
+      repository.full_name,
+      "webhook"
+    );
+
+    // Filter by event preferences (stars event type)
+    const interestedChannels = channels.filter(ch =>
+      ch.eventTypes.includes("stars")
+    );
+
+    if (interestedChannels.length === 0) {
+      console.log("No interested channels for watch event");
+      return;
+    }
+
+    // Format message using existing formatter
+    const message = formatWatch(event);
+
+    if (!message) {
+      console.log(
+        "Formatter returned empty message (event action not handled)"
+      );
+      return;
+    }
 
     // Send to all interested channels in parallel
     await Promise.all(

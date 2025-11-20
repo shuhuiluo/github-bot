@@ -25,6 +25,8 @@
     "pull_request_review",
     "pull_request_review_comment",
     "create",
-    "delete"
+    "delete",
+    "fork",
+    "watch"
   ]
 }
