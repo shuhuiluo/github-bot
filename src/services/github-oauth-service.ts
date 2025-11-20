@@ -27,7 +27,8 @@ export class GitHubOAuthService {
   constructor(githubApp: GitHubApp) {
     this.githubApp = githubApp;
     this.redirectUrl =
-      process.env.OAUTH_REDIRECT_URL || `${process.env.BOT_URL}/oauth/callback`;
+      process.env.OAUTH_REDIRECT_URL ||
+      `${process.env.PUBLIC_URL}/oauth/callback`;
 
     // Derive 32-byte encryption key from JWT_SECRET using SHA-256
     const jwtSecret = process.env.JWT_SECRET;
