@@ -302,6 +302,7 @@ All webhook events above, plus:
 ## Future Enhancements
 
 - [ ] Automatic subscription upgrade when GitHub App is installed
+- [ ] Private repo support for `/gh_pr` and `/gh_issue` commands
 - [ ] More slash commands (`/gh search`, `/gh_release list`)
 - [ ] Scheduled digests (daily/weekly summaries)
 - [ ] Thread organization for related webhook events

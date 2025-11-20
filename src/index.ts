@@ -133,18 +133,17 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
   await handler.sendMessage(
     channelId,
     "**GitHub Bot for Towns**\n\n" +
-      "**Subscription Commands:**\n" +
-      "• `/github subscribe owner/repo` - Subscribe to GitHub events (checked every 5 min)\n" +
-      "• `/github unsubscribe owner/repo` - Unsubscribe from a repository\n" +
-      "• `/github status` - Show current subscriptions\n\n" +
-      "**Query Commands:**\n" +
-      "• `/gh_pr owner/repo #123 [--full]` - Show single PR details\n" +
-      "• `/gh_pr list owner/repo [count] [--state=...] [--author=...]` - List PRs\n" +
-      "• `/gh_issue owner/repo #123 [--full]` - Show single issue details\n" +
-      "• `/gh_issue list owner/repo [count] [--state=...] [--creator=...]` - List issues\n" +
-      "• Filters: --state=open|closed|merged|all, --author/--creator=username\n\n" +
-      "**Other Commands:**\n" +
-      "• `/help` - Show this help message"
+      "**Subscriptions**\n" +
+      "• `/github subscribe owner/repo [--events=pr,issues,...]`\n" +
+      "• `/github unsubscribe owner/repo`\n" +
+      "• `/github status`\n\n" +
+      "**Events:** pr, issues, commits, releases, ci, comments, reviews, branches, forks, stars\n\n" +
+      "**Queries** _(public repos)_\n" +
+      "• `/gh_pr owner/repo #123 [--full]`\n" +
+      "• `/gh_pr list owner/repo [count] [--state=...] [--author=...]`\n" +
+      "• `/gh_issue owner/repo #123 [--full]`\n" +
+      "• `/gh_issue list owner/repo [count] [--state=...] [--creator=...]`\n\n" +
+      "_Private repos require OAuth + GitHub App_"
   );
 });
 
