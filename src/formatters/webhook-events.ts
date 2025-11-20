@@ -14,30 +14,20 @@ import type {
   ForkPayload,
   WatchPayload,
 } from "../types/webhooks";
-import { buildMessage } from "./shared";
+import { buildMessage, getPrEventEmoji, getPrEventHeader } from "./shared";
 
 export function formatPullRequest(payload: PullRequestPayload): string {
   const { action, pull_request, repository } = payload;
 
-  let emoji: string;
-  let header: string;
-  let metadata: string[] | undefined;
+  const emoji = getPrEventEmoji(action, pull_request.merged ?? false);
+  const header = getPrEventHeader(action, pull_request.merged ?? false);
 
-  if (action === "opened") {
-    emoji = "🔔";
-    header = "Pull Request Opened";
-    metadata = [
-      `📊 +${pull_request.additions || 0} -${pull_request.deletions || 0}`,
-    ];
-  } else if (action === "closed" && pull_request.merged) {
-    emoji = "✅";
-    header = "Pull Request Merged";
-  } else if (action === "closed" && !pull_request.merged) {
-    emoji = "❌";
-    header = "Pull Request Closed";
-  } else {
-    return "";
-  }
+  if (!emoji || !header) return "";
+
+  const metadata =
+    action === "opened"
+      ? [`📊 +${pull_request.additions || 0} -${pull_request.deletions || 0}`]
+      : undefined;
 
   return buildMessage({
     emoji,
@@ -45,7 +35,7 @@ export function formatPullRequest(payload: PullRequestPayload): string {
     repository: repository.full_name,
     number: pull_request.number,
     title: pull_request.title,
-    user: pull_request.user.login,
+    user: pull_request.user?.login || "unknown",
     metadata,
     url: pull_request.html_url,
   });

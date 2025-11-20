@@ -154,9 +154,13 @@ bot.onSlashCommand("github", async (handler, event) => {
   await handleGithubSubscription(handler, event, subscriptionService);
 });
 
-bot.onSlashCommand("gh_pr", handleGhPr);
+bot.onSlashCommand("gh_pr", async (handler, event) => {
+  await handleGhPr(handler, event, oauthService);
+});
 
-bot.onSlashCommand("gh_issue", handleGhIssue);
+bot.onSlashCommand("gh_issue", async (handler, event) => {
+  await handleGhIssue(handler, event, oauthService);
+});
 
 // ============================================================================
 // START BOT & SETUP HONO APP

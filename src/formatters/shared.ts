@@ -50,3 +50,23 @@ export function buildMessage(section: MessageSection): string {
 
   return parts.join("\n");
 }
+
+/**
+ * Get emoji for PR event based on action and merge status
+ */
+export function getPrEventEmoji(action: string, merged: boolean): string {
+  if (action === "opened") return "🔔";
+  if (action === "closed" && merged) return "✅";
+  if (action === "closed" && !merged) return "❌";
+  return "";
+}
+
+/**
+ * Get header text for PR event based on action and merge status
+ */
+export function getPrEventHeader(action: string, merged: boolean): string {
+  if (action === "opened") return "Pull Request Opened";
+  if (action === "closed" && merged) return "Pull Request Merged";
+  if (action === "closed" && !merged) return "Pull Request Closed";
+  return "";
+}

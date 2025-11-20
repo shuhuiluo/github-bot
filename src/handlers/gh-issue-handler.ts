@@ -1,35 +1,45 @@
 import type { BotHandler } from "@towns-protocol/bot";
-import { getIssue, listIssues } from "../api/github-client";
+import {
+  getIssue,
+  listIssues,
+  classifyApiError,
+  type GitHubIssueList,
+} from "../api/github-client";
 import { stripMarkdown } from "../utils/stripper";
-import { truncateText } from "../utils/text";
 import { parseCommandArgs, validateIssueFilters } from "../utils/arg-parser";
-
-interface GhIssueEvent {
-  channelId: string;
-  args: string[];
-}
+import { sendOAuthPrompt } from "../utils/oauth-helpers";
+import type { GitHubOAuthService } from "../services/github-oauth-service";
+import type { SlashCommandEvent } from "../types/bot";
+import {
+  formatIssueDetail,
+  formatIssueList,
+} from "../formatters/command-formatters";
 
 export async function handleGhIssue(
   handler: BotHandler,
-  event: GhIssueEvent
+  event: SlashCommandEvent,
+  oauthService: GitHubOAuthService
 ): Promise<void> {
-  const { channelId, args } = event;
+  const { args } = event;
 
   // Check if this is a list subcommand
   if (args.length > 0 && args[0] === "list") {
-    await handleListIssues(handler, channelId, args.slice(1));
+    await handleListIssues(handler, event, args.slice(1), oauthService);
     return;
   }
 
   // Otherwise, handle as show single issue (backward compatible)
-  await handleShowIssue(handler, channelId, args);
+  await handleShowIssue(handler, event, args, oauthService);
 }
 
 async function handleShowIssue(
   handler: BotHandler,
-  channelId: string,
-  args: string[]
+  event: SlashCommandEvent,
+  args: string[],
+  oauthService: GitHubOAuthService
 ): Promise<void> {
+  const { channelId, userId, spaceId } = event;
+
   // Check for --full flag
   const hasFullFlag = args.includes("--full");
   const cleanArgs = args.filter(arg => arg !== "--full");
@@ -48,30 +58,52 @@ async function handleShowIssue(
   const issueNumber = stripMarkdown(cleanArgs[1]).replace("#", "");
 
   try {
+    // Try with bot token first (works for public repos)
     const issue = await getIssue(repo, issueNumber);
-
-    const labels = issue.labels
-      .map(l => (typeof l === "string" ? l : l.name))
-      .join(", ");
-
-    // Format description
-    const description = hasFullFlag
-      ? issue.body
-      : truncateText(issue.body, 100);
-
-    const message =
-      `**Issue #${issue.number}**\n` +
-      `**${repo}**\n\n` +
-      `**${issue.title}**\n\n` +
-      (description ? `${description}\n\n` : "") +
-      `📊 Status: ${issue.state === "open" ? "🟢 Open" : "✅ Closed"}\n` +
-      `👤 Author: ${issue.user?.login || "Unknown"}\n` +
-      `💬 Comments: ${issue.comments ?? 0}\n` +
-      (labels ? `🏷️ Labels: ${labels}\n` : "") +
-      `🔗 ${issue.html_url}`;
-
-    await handler.sendMessage(channelId, message);
+    await handler.sendMessage(
+      channelId,
+      formatIssueDetail(issue, repo, hasFullFlag)
+    );
   } catch (error) {
+    const errorType = classifyApiError(error);
+
+    // Try OAuth fallback for private repos
+    if (errorType === "forbidden" || errorType === "not_found") {
+      const userOctokit = await oauthService.getUserOctokit(userId);
+
+      if (userOctokit) {
+        // User has OAuth token - retry with their token
+        try {
+          const issue = await getIssue(repo, issueNumber, userOctokit);
+          await handler.sendMessage(
+            channelId,
+            formatIssueDetail(issue, repo, hasFullFlag)
+          );
+          return;
+        } catch {
+          // User token also failed - they don't have access
+          await handler.sendMessage(
+            channelId,
+            `❌ You don't have access to this repository`
+          );
+          return;
+        }
+      }
+
+      // No OAuth token - show connection prompt
+      await sendOAuthPrompt(handler, channelId, oauthService, userId, spaceId);
+      return;
+    }
+
+    // Handle other errors
+    if (errorType === "rate_limited") {
+      await handler.sendMessage(
+        channelId,
+        "❌ GitHub API rate limited. Try again in a few minutes."
+      );
+      return;
+    }
+
     const message =
       error instanceof Error ? error.message : "Unknown error occurred";
     await handler.sendMessage(channelId, `❌ Error: ${message}`);
@@ -80,9 +112,12 @@ async function handleShowIssue(
 
 async function handleListIssues(
   handler: BotHandler,
-  channelId: string,
-  args: string[]
+  event: SlashCommandEvent,
+  args: string[],
+  oauthService: GitHubOAuthService
 ): Promise<void> {
+  const { channelId, userId, spaceId } = event;
+
   if (args.length < 1) {
     await handler.sendMessage(
       channelId,
@@ -110,30 +145,67 @@ async function handleListIssues(
   }
 
   try {
+    // Try with bot token first (works for public repos)
     const actualIssues = await listIssues(repo, count, filters);
+    await sendIssueList(handler, channelId, actualIssues, repo);
+  } catch (error) {
+    const errorType = classifyApiError(error);
 
-    if (actualIssues.length === 0) {
-      await handler.sendMessage(channelId, `No issues found for **${repo}**`);
+    // Try OAuth fallback for private repos
+    if (errorType === "forbidden" || errorType === "not_found") {
+      const userOctokit = await oauthService.getUserOctokit(userId);
+
+      if (userOctokit) {
+        // User has OAuth token - retry with their token
+        try {
+          const actualIssues = await listIssues(
+            repo,
+            count,
+            filters,
+            userOctokit
+          );
+          await sendIssueList(handler, channelId, actualIssues, repo);
+          return;
+        } catch {
+          // User token also failed - they don't have access
+          await handler.sendMessage(
+            channelId,
+            `❌ You don't have access to this repository`
+          );
+          return;
+        }
+      }
+
+      // No OAuth token - show connection prompt
+      await sendOAuthPrompt(handler, channelId, oauthService, userId, spaceId);
       return;
     }
 
-    const issueList = actualIssues
-      .map(issue => {
-        const status = issue.state === "open" ? "🟢 Open" : "✅ Closed";
-        const issueLink = `[#${issue.number}](${issue.html_url})`;
-        return `• ${issueLink} ${status} - **${issue.title}** by ${issue.user?.login || "Unknown"}`;
-      })
-      .join("\n\n");
+    // Handle other errors
+    if (errorType === "rate_limited") {
+      await handler.sendMessage(
+        channelId,
+        "❌ GitHub API rate limited. Try again in a few minutes."
+      );
+      return;
+    }
 
-    const message =
-      `**Recent Issues - ${repo}**\n` +
-      `Showing ${actualIssues.length} most recent issues:\n\n` +
-      issueList;
-
-    await handler.sendMessage(channelId, message);
-  } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown error occurred";
     await handler.sendMessage(channelId, `❌ Error: ${message}`);
   }
+}
+
+async function sendIssueList(
+  handler: BotHandler,
+  channelId: string,
+  issues: GitHubIssueList,
+  repo: string
+): Promise<void> {
+  if (issues.length === 0) {
+    await handler.sendMessage(channelId, `No issues found for **${repo}**`);
+    return;
+  }
+
+  await handler.sendMessage(channelId, formatIssueList(issues, repo));
 }

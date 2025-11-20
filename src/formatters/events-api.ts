@@ -10,7 +10,7 @@
 
 import type { GitHubEvent } from "../types/events-api";
 import type { GitHubPullRequest } from "../api/github-client";
-import { buildMessage } from "./shared";
+import { buildMessage, getPrEventEmoji, getPrEventHeader } from "./shared";
 
 /**
  * Format GitHub Events API events into human-readable messages
@@ -47,21 +47,10 @@ export function formatEvent(
         );
       }
 
-      let emoji: string;
-      let header: string;
+      const emoji = getPrEventEmoji(action, fullPr.merged);
+      const header = getPrEventHeader(action, fullPr.merged);
 
-      if (action === "opened") {
-        emoji = "🔔";
-        header = "Pull Request Opened";
-      } else if (action === "closed" && fullPr.merged) {
-        emoji = "✅";
-        header = "Pull Request Merged";
-      } else if (action === "closed" && !fullPr.merged) {
-        emoji = "❌";
-        header = "Pull Request Closed";
-      } else {
-        return "";
-      }
+      if (!emoji || !header) return "";
 
       return buildMessage({
         emoji,

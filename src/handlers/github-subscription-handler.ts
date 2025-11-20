@@ -1,16 +1,11 @@
-import type { BotHandler, BotEvents } from "@towns-protocol/bot";
+import type { BotHandler } from "@towns-protocol/bot";
 import { stripMarkdown } from "../utils/stripper";
 import {
   ALLOWED_EVENT_TYPES,
   DEFAULT_EVENT_TYPES,
 } from "../constants/event-types";
 import type { SubscriptionService } from "../services/subscription-service";
-import type commands from "../commands";
-
-// Infer slash command event type from SDK
-type SlashCommandEvent = Parameters<
-  BotEvents<typeof commands>["slashCommand"]
->[1];
+import type { SlashCommandEvent } from "../types/bot";
 
 /**
  * Parse and validate event types from --events flag

@@ -14,6 +14,14 @@ module.exports = {
     project: path.resolve(__dirname, "tsconfig.json"),
   },
   plugins: ["@typescript-eslint", "import-x", "eslint-plugin-tsdoc"],
+  settings: {
+    "import-x/resolver": {
+      typescript: {
+        alwaysTryTypes: true,
+        project: path.resolve(__dirname, "tsconfig.json"),
+      },
+    },
+  },
   ignorePatterns: ["dist/**", ".turbo/**", "node_modules/**", "vitest.*"],
   rules: {
     "no-console": "off",

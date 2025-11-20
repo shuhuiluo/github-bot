@@ -1,35 +1,42 @@
 import type { BotHandler } from "@towns-protocol/bot";
-import { getPullRequest, listPullRequests } from "../api/github-client";
+import {
+  getPullRequest,
+  listPullRequests,
+  classifyApiError,
+  type GitHubPullRequestList,
+} from "../api/github-client";
 import { stripMarkdown } from "../utils/stripper";
-import { truncateText } from "../utils/text";
 import { parseCommandArgs, validatePrFilters } from "../utils/arg-parser";
-
-interface GhPrEvent {
-  channelId: string;
-  args: string[];
-}
+import { sendOAuthPrompt } from "../utils/oauth-helpers";
+import type { GitHubOAuthService } from "../services/github-oauth-service";
+import type { SlashCommandEvent } from "../types/bot";
+import { formatPrList, formatPrDetail } from "../formatters/command-formatters";
 
 export async function handleGhPr(
   handler: BotHandler,
-  event: GhPrEvent
+  event: SlashCommandEvent,
+  oauthService: GitHubOAuthService
 ): Promise<void> {
-  const { channelId, args } = event;
+  const { args } = event;
 
   // Check if this is a list subcommand
   if (args.length > 0 && args[0] === "list") {
-    await handleListPrs(handler, channelId, args.slice(1));
+    await handleListPrs(handler, event, args.slice(1), oauthService);
     return;
   }
 
   // Otherwise, handle as show single PR (backward compatible)
-  await handleShowPr(handler, channelId, args);
+  await handleShowPr(handler, event, args, oauthService);
 }
 
 async function handleShowPr(
   handler: BotHandler,
-  channelId: string,
-  args: string[]
+  event: SlashCommandEvent,
+  args: string[],
+  oauthService: GitHubOAuthService
 ): Promise<void> {
+  const { channelId, userId, spaceId } = event;
+
   // Check for --full flag
   const hasFullFlag = args.includes("--full");
   const cleanArgs = args.filter(arg => arg !== "--full");
@@ -48,24 +55,49 @@ async function handleShowPr(
   const prNumber = stripMarkdown(cleanArgs[1]).replace("#", "");
 
   try {
+    // Try with bot token first (works for public repos)
     const pr = await getPullRequest(repo, prNumber);
-
-    // Format description
-    const description = hasFullFlag ? pr.body : truncateText(pr.body, 100);
-
-    const message =
-      `**Pull Request #${pr.number}**\n` +
-      `**${repo}**\n\n` +
-      `**${pr.title}**\n\n` +
-      (description ? `${description}\n\n` : "") +
-      `📊 Status: ${pr.state === "open" ? "🟢 Open" : pr.merged ? "✅ Merged" : "❌ Closed"}\n` +
-      `👤 Author: ${pr.user?.login || "Unknown"}\n` +
-      `📝 Changes: +${pr.additions ?? 0} -${pr.deletions ?? 0}\n` +
-      `💬 Comments: ${pr.comments ?? 0}\n` +
-      `🔗 ${pr.html_url}`;
-
-    await handler.sendMessage(channelId, message);
+    await handler.sendMessage(channelId, formatPrDetail(pr, repo, hasFullFlag));
   } catch (error) {
+    const errorType = classifyApiError(error);
+
+    // Try OAuth fallback for private repos
+    if (errorType === "forbidden" || errorType === "not_found") {
+      const userOctokit = await oauthService.getUserOctokit(userId);
+
+      if (userOctokit) {
+        // User has OAuth token - retry with their token
+        try {
+          const pr = await getPullRequest(repo, prNumber, userOctokit);
+          await handler.sendMessage(
+            channelId,
+            formatPrDetail(pr, repo, hasFullFlag)
+          );
+          return;
+        } catch {
+          // User token also failed - they don't have access
+          await handler.sendMessage(
+            channelId,
+            `❌ You don't have access to this repository`
+          );
+          return;
+        }
+      }
+
+      // No OAuth token - show connection prompt
+      await sendOAuthPrompt(handler, channelId, oauthService, userId, spaceId);
+      return;
+    }
+
+    // Handle other errors
+    if (errorType === "rate_limited") {
+      await handler.sendMessage(
+        channelId,
+        "❌ GitHub API rate limited. Try again in a few minutes."
+      );
+      return;
+    }
+
     const message =
       error instanceof Error ? error.message : "Unknown error occurred";
     await handler.sendMessage(channelId, `❌ Error: ${message}`);
@@ -74,9 +106,12 @@ async function handleShowPr(
 
 async function handleListPrs(
   handler: BotHandler,
-  channelId: string,
-  args: string[]
+  event: SlashCommandEvent,
+  args: string[],
+  oauthService: GitHubOAuthService
 ): Promise<void> {
+  const { channelId, userId, spaceId } = event;
+
   if (args.length < 1) {
     await handler.sendMessage(
       channelId,
@@ -104,39 +139,65 @@ async function handleListPrs(
   }
 
   try {
+    // Try with bot token first (works for public repos)
     const prs = await listPullRequests(repo, count, filters);
+    await sendPrList(handler, channelId, prs, repo);
+  } catch (error) {
+    const errorType = classifyApiError(error);
 
-    if (prs.length === 0) {
+    // Try OAuth fallback for private repos
+    if (errorType === "forbidden" || errorType === "not_found") {
+      const userOctokit = await oauthService.getUserOctokit(userId);
+
+      if (userOctokit) {
+        // User has OAuth token - retry with their token
+        try {
+          const prs = await listPullRequests(repo, count, filters, userOctokit);
+          await sendPrList(handler, channelId, prs, repo);
+          return;
+        } catch {
+          // User token also failed - they don't have access
+          await handler.sendMessage(
+            channelId,
+            `❌ You don't have access to this repository`
+          );
+          return;
+        }
+      }
+
+      // No OAuth token - show connection prompt
+      await sendOAuthPrompt(handler, channelId, oauthService, userId, spaceId);
+      return;
+    }
+
+    // Handle other errors
+    if (errorType === "rate_limited") {
       await handler.sendMessage(
         channelId,
-        `No pull requests found for **${repo}**`
+        "❌ GitHub API rate limited. Try again in a few minutes."
       );
       return;
     }
 
-    const prList = prs
-      .map(pr => {
-        const status = pr.draft
-          ? "📝 Draft"
-          : pr.state === "open"
-            ? "🟢 Open"
-            : pr.merged_at
-              ? "✅ Merged"
-              : "❌ Closed";
-        const prLink = `[#${pr.number}](${pr.html_url})`;
-        return `• ${prLink} ${status} - **${pr.title}** by ${pr.user?.login || "Unknown"}`;
-      })
-      .join("\n\n");
-
-    const message =
-      `**Recent Pull Requests - ${repo}**\n` +
-      `Showing ${prs.length} most recent PRs:\n\n` +
-      prList;
-
-    await handler.sendMessage(channelId, message);
-  } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown error occurred";
     await handler.sendMessage(channelId, `❌ Error: ${message}`);
   }
+}
+
+async function sendPrList(
+  handler: BotHandler,
+  channelId: string,
+  prs: GitHubPullRequestList,
+  repo: string
+): Promise<void> {
+  if (prs.length === 0) {
+    await handler.sendMessage(
+      channelId,
+      `No pull requests found for **${repo}**`
+    );
+    return;
+  }
+
+  await handler.sendMessage(channelId, formatPrList(prs, repo));
 }

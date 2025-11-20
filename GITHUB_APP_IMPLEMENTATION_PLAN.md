@@ -468,6 +468,44 @@ Located at `github-app-manifest.json`. Key settings:
 - Webhook deliveries: Periodic cleanup of records > 7 days old
 - Uses `lt()` comparison (not `eq()`)
 
+## Query Commands Private Repo Support
+
+### Current Limitation
+
+The `/gh_pr` and `/gh_issue` commands use a static bot-level GitHub token, which only works for public repositories. Private repos fail with 403/404 errors and generic error messages.
+
+### Strategy
+
+**OAuth-First Approach:** Use the user's personal GitHub OAuth token for private repo access.
+
+The infrastructure already exists:
+- `GitHubOAuthService` manages encrypted user tokens
+- `/github subscribe` implements the same OAuth flow pattern
+- `github_user_tokens` table stores tokens with AES-256-GCM encryption
+
+### Implementation Summary
+
+1. **Try bot token first** (works for public repos)
+2. **On 403/404, check if user has OAuth token:**
+   - Has token → retry with user's token
+   - No token → show OAuth connection prompt
+   - User token also fails → show access denied message
+3. **Add error classification:**
+   - 404 = repo not found
+   - 403 without OAuth = show connection prompt
+   - 403 with OAuth = user doesn't have access
+   - 429 = rate limited
+4. **Optional GitHub App fallback** for org-wide access without per-user OAuth
+
+### Changes Required
+
+- Modify `github-client` functions to accept optional user Octokit instance
+- Update handlers to inject `GitHubOAuthService` dependency
+- Add error classification helper
+- Wire OAuth service to command handlers in `index.ts`
+
+**Estimated effort:** 2-3 hours (infrastructure exists, just needs wiring)
+
 ## Future Improvements
 
 1. **Repo-specific installation URLs**: Pre-select repository in installation flow

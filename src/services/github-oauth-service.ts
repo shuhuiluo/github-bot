@@ -8,6 +8,7 @@ import {
   createCipheriv,
   createDecipheriv,
 } from "crypto";
+import { Octokit } from "@octokit/rest";
 
 /**
  * GitHubOAuthService - Manages OAuth authentication for Towns users
@@ -251,20 +252,15 @@ export class GitHubOAuthService {
    * @param townsUserId - Towns user ID
    * @returns Authenticated Octokit instance or null if not linked
    */
-  async getUserOctokit(townsUserId: string) {
+  async getUserOctokit(townsUserId: string): Promise<Octokit | null> {
     const token = await this.getUserToken(townsUserId);
     if (!token) {
       return null;
     }
 
-    const oauth = this.githubApp.getOAuth();
-    if (!oauth) {
-      throw new Error("OAuth not configured");
-    }
-
-    // Use Octokit's OAuth to get user Octokit instance
-    return await oauth.getUserOctokit({
-      token: token.accessToken,
+    // Create Octokit REST instance with user's access token
+    return new Octokit({
+      auth: token.accessToken,
     });
   }
 

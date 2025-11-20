@@ -15,15 +15,40 @@ export type GitHubIssueList =
 export type GitHubPullRequestList =
   Endpoints["GET /repos/{owner}/{repo}/pulls"]["response"]["data"];
 
+/**
+ * Error types for GitHub API calls
+ */
+export type GitHubApiErrorType =
+  | "not_found"
+  | "forbidden"
+  | "rate_limited"
+  | "unknown";
+
+/**
+ * Classify GitHub API error for better user messaging
+ */
+export function classifyApiError(error: unknown): GitHubApiErrorType {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  const status = (error as any)?.status;
+  if (status === 404) return "not_found";
+  if (status === 403) return "forbidden";
+  if (status === 429) return "rate_limited";
+  return "unknown";
+}
+
 function parseRepo(repo: string): { owner: string; repo: string } {
   const [owner, repoName] = repo.split("/");
   return { owner, repo: repoName };
 }
 
-export async function validateRepo(repo: string): Promise<boolean> {
+export async function validateRepo(
+  repo: string,
+  userOctokit?: Octokit
+): Promise<boolean> {
   try {
+    const client = userOctokit || octokit;
     const { owner, repo: repoName } = parseRepo(repo);
-    await octokit.repos.get({ owner, repo: repoName });
+    await client.repos.get({ owner, repo: repoName });
     return true;
   } catch {
     return false;
@@ -32,10 +57,12 @@ export async function validateRepo(repo: string): Promise<boolean> {
 
 export async function getIssue(
   repo: string,
-  issueNumber: string
+  issueNumber: string,
+  userOctokit?: Octokit
 ): Promise<GitHubIssue> {
+  const client = userOctokit || octokit;
   const { owner, repo: repoName } = parseRepo(repo);
-  const { data } = await octokit.issues.get({
+  const { data } = await client.issues.get({
     owner,
     repo: repoName,
     issue_number: parseInt(issueNumber),
@@ -45,10 +72,12 @@ export async function getIssue(
 
 export async function getPullRequest(
   repo: string,
-  prNumber: string
+  prNumber: string,
+  userOctokit?: Octokit
 ): Promise<GitHubPullRequest> {
+  const client = userOctokit || octokit;
   const { owner, repo: repoName } = parseRepo(repo);
-  const { data } = await octokit.pulls.get({
+  const { data } = await client.pulls.get({
     owner,
     repo: repoName,
     pull_number: parseInt(prNumber),
@@ -59,8 +88,10 @@ export async function getPullRequest(
 export async function listPullRequests(
   repo: string,
   count: number = 10,
-  filters?: { state?: string; author?: string }
+  filters?: { state?: string; author?: string },
+  userOctokit?: Octokit
 ): Promise<GitHubPullRequestList> {
+  const client = userOctokit || octokit;
   const { owner, repo: repoName } = parseRepo(repo);
 
   // Determine API state (merged PRs are fetched as closed)
@@ -76,7 +107,7 @@ export async function listPullRequests(
   const maxPages = 10; // Limit pagination to avoid timeouts
 
   // Use Octokit's pagination iterator
-  const iterator = octokit.paginate.iterator(octokit.pulls.list, {
+  const iterator = client.paginate.iterator(client.pulls.list, {
     owner,
     repo: repoName,
     state: apiState,
@@ -120,13 +151,15 @@ export async function listPullRequests(
 export async function listIssues(
   repo: string,
   count: number = 10,
-  filters?: { state?: string; creator?: string }
+  filters?: { state?: string; creator?: string },
+  userOctokit?: Octokit
 ): Promise<GitHubIssueList> {
+  const client = userOctokit || octokit;
   const { owner, repo: repoName } = parseRepo(repo);
 
   // Build API query parameters
   const apiState = (filters?.state || "all") as "open" | "closed" | "all";
-  const params: Parameters<typeof octokit.issues.listForRepo>[0] = {
+  const params: Parameters<typeof client.issues.listForRepo>[0] = {
     owner,
     repo: repoName,
     state: apiState,
@@ -144,10 +177,7 @@ export async function listIssues(
   const maxPages = 10; // Limit pagination to avoid timeouts
 
   // Use Octokit's pagination iterator
-  const iterator = octokit.paginate.iterator(
-    octokit.issues.listForRepo,
-    params
-  );
+  const iterator = client.paginate.iterator(client.issues.listForRepo, params);
 
   for await (const { data: items } of iterator) {
     pageCount++;
