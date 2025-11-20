@@ -348,24 +348,7 @@ Auto-redirecting to installation in 5 seconds...
 
 ## Configuration
 
-### Environment Variables
-
-```bash
-# GitHub App (required for webhooks)
-GITHUB_APP_ID=123456
-GITHUB_APP_PRIVATE_KEY_BASE64=<base64-encoded-pem>
-GITHUB_APP_CLIENT_ID=Iv1.abc123
-GITHUB_APP_CLIENT_SECRET=<secret>
-GITHUB_APP_SLUG=towns-github-bot
-GITHUB_WEBHOOK_SECRET=<random-string>
-
-# Legacy polling (optional fallback)
-GITHUB_TOKEN=ghp_xxx
-
-# Towns Bot
-APP_PRIVATE_DATA=<base64-encoded>
-JWT_SECRET=<secret>
-```
+> **See `CONTRIBUTING.md` for complete environment variables reference.**
 
 ### GitHub App Manifest
 
@@ -382,6 +365,8 @@ Located at `github-app-manifest.json`. Key settings:
 
 ### ✅ Completed
 
+**Core Infrastructure:**
+
 - GitHub App core with Octokit integration
 - Webhook endpoint with signature verification
 - Database schema with foreign key CASCADE
@@ -392,55 +377,40 @@ Located at `github-app-manifest.json`. Key settings:
 - Type-safe handlers with consolidated types
 - Dual-mode polling service (skips repos with app)
 
-### ⚠️ Known Issues
+**User Experience:**
 
-1. **Help message outdated**: Says "checked every 5 min" without mentioning app
-2. **Status command incomplete**: Doesn't show per-repo delivery mode
-3. **No private repo detection**: Allows subscription to inaccessible repos
-4. **Generic installation URL**: Doesn't pre-select specific repository
-5. **No installation status command**: Users can't see which repos have app
+- Status command shows delivery mode per repo (⚡/⏱️)
+- Private repo handling with OAuth validation
+- Enhanced subscription messages with delivery mode info
+- Installation notifications with automatic upgrade
+- Case-insensitive unsubscribe
+- Ephemeral OAuth URLs for security
+- Installation suggestions with admin detection
 
-## Remaining Work
+**Documentation:**
 
-### Priority 1: User Experience
+- Comprehensive README reorganization
+- New CONTRIBUTING.md with developer guide
+- Complete environment variables documentation
+- Condensed AGENTS.md reference
 
-1. **Update `/help` command**
-   - Mention GitHub App option
-   - Explain real-time vs polling
+### 🚧 Remaining Work
 
-2. **Fix `/github status` command**
-   - Show delivery mode per repo (⚡ Real-time or ⏱️ Polling)
-   - Count and display breakdown
-   - Prompt to install app if repos are polling
+**Improved Subscription UX (Priority 1):**
 
-3. **Private repo handling**
-   - Check repo accessibility before subscribing
-   - Block subscription to private repos without app
-   - Clear error message with installation instructions
+- Single OAuth flow - Create subscription during OAuth callback (users don't re-run command)
+- Enhanced OAuth success page with installation countdown and auto-redirect
+- Pre-select repository in GitHub App installation URL using `target_id` parameter
 
-### Priority 2: Quality of Life
+**Query Commands (Priority 2):**
 
-4. **Enhanced subscription messages**
-   - Better formatting with emojis
-   - Clear explanation of what happens next
-   - Expected delay for first event
+- Additional commands: `/gh search`, `/gh_release list`
+- Repository search functionality
 
-5. **Installation notifications**
-   - More prominent formatting
-   - List which events are now real-time
-   - Suggest verifying with `/github status`
+**Event Organization (Priority 3):**
 
-### Priority 3: Documentation
-
-6. **README updates**
-   - Add GitHub App installation section
-   - Explain dual-mode operation
-   - Document private repo requirements
-
-7. **.env.sample improvements**
-   - Better explanations of each variable
-   - Link to GitHub App setup guide
-   - Mark required vs optional variables
+- Thread-based grouping for related events (PR + commits + CI)
+- Event summaries and digests
 
 ## Testing Checklist
 

@@ -220,6 +220,7 @@ All webhook events above, plus:
 ### Subscription & UX
 
 - [ ] Improved subscription UX - Single OAuth flow with immediate subscription creation
+- [ ] Enhanced OAuth success page - Installation countdown and auto-redirect
 - [ ] Granular unsubscribe - Unsubscribe from specific event types without removing entire repo subscription
 - [ ] Subscription management - Update event filters for existing subscriptions
 
