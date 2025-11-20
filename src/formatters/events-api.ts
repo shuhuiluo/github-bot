@@ -268,6 +268,33 @@ export function formatEvent(
       );
     }
 
+    case "WatchEvent": {
+      if (payload.action !== "started") return "";
+
+      return (
+        `⭐ **Repository Starred**\n` +
+        `**${repo.name}**\n` +
+        `👤 ${actor.login}\n` +
+        `🔗 https://github.com/${repo.name}`
+      );
+    }
+
+    case "ForkEvent": {
+      const { forkee } = payload;
+      if (!forkee?.full_name) return "";
+
+      const targetUrl =
+        forkee.html_url ??
+        `https://github.com/${forkee.full_name.replace(/^\/+/, "")}`;
+
+      return (
+        `🍴 **Repository Forked**\n` +
+        `**${repo.name}** → **${forkee.full_name}**\n` +
+        `👤 ${actor.login}\n` +
+        `🔗 ${targetUrl}`
+      );
+    }
+
     // Ignore other event types for now
     default:
       return "";

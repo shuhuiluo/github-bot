@@ -21,6 +21,8 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   reviews: "PullRequestReviewEvent",
   branches: "CreateEvent,DeleteEvent",
   review_comments: "PullRequestReviewCommentEvent",
+  stars: "WatchEvent",
+  forks: "ForkEvent",
 };
 
 /**

@@ -330,6 +330,39 @@ export interface PullRequestReviewCommentEvent extends BaseGitHubEvent {
 }
 
 /**
+ * Watch Event Payload (stars)
+ */
+export const WatchPayloadSchema = z.object({
+  action: z.literal("started"),
+});
+
+export type WatchPayload = z.infer<typeof WatchPayloadSchema>;
+
+export interface WatchEvent extends BaseGitHubEvent {
+  type: "WatchEvent";
+  payload: WatchPayload;
+}
+
+/**
+ * Fork Event Payload
+ */
+export const ForkPayloadSchema = z.object({
+  forkee: z
+    .object({
+      full_name: z.string(),
+      html_url: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type ForkPayload = z.infer<typeof ForkPayloadSchema>;
+
+export interface ForkEvent extends BaseGitHubEvent {
+  type: "ForkEvent";
+  payload: ForkPayload;
+}
+
+/**
  * Discriminated union of all supported GitHub Events
  */
 export type GitHubEvent =
@@ -342,7 +375,26 @@ export type GitHubEvent =
   | PullRequestReviewEvent
   | CreateEvent
   | DeleteEvent
-  | PullRequestReviewCommentEvent;
+  | PullRequestReviewCommentEvent
+  | WatchEvent
+  | ForkEvent;
+
+const SUPPORTED_EVENT_TYPES = [
+  "PullRequestEvent",
+  "IssuesEvent",
+  "PushEvent",
+  "ReleaseEvent",
+  "WorkflowRunEvent",
+  "IssueCommentEvent",
+  "PullRequestReviewEvent",
+  "CreateEvent",
+  "DeleteEvent",
+  "PullRequestReviewCommentEvent",
+  "WatchEvent",
+  "ForkEvent",
+] as const;
+
+const SUPPORTED_EVENT_TYPE_SET = new Set<string>(SUPPORTED_EVENT_TYPES);
 
 /**
  * Zod schema for validating GitHub Events
@@ -389,6 +441,14 @@ export const GitHubEventSchema = z.discriminatedUnion("type", [
     type: z.literal("PullRequestReviewCommentEvent"),
     payload: PullRequestReviewCommentPayloadSchema,
   }),
+  BaseEventSchema.extend({
+    type: z.literal("WatchEvent"),
+    payload: WatchPayloadSchema,
+  }),
+  BaseEventSchema.extend({
+    type: z.literal("ForkEvent"),
+    payload: ForkPayloadSchema,
+  }),
 ]);
 
 /**
@@ -400,7 +460,13 @@ export function validateGitHubEvent(event: unknown): GitHubEvent | null {
   const result = GitHubEventSchema.safeParse(event);
 
   if (!result.success) {
-    const eventType = (event as Record<string, unknown>)?.type;
+    const rawType = (event as Record<string, unknown>)?.type;
+    const eventType = typeof rawType === "string" ? rawType : undefined;
+
+    if (!eventType || !SUPPORTED_EVENT_TYPE_SET.has(eventType)) {
+      return null;
+    }
+
     const eventId = (event as Record<string, unknown>)?.id;
 
     console.error(

@@ -389,6 +389,65 @@ describe("validateGitHubEvent", () => {
     });
   });
 
+  describe("WatchEvent", () => {
+    test("validates started action", () => {
+      const event = {
+        ...baseEvent,
+        type: "WatchEvent",
+        payload: {
+          action: "started",
+        },
+      };
+
+      const result = validateGitHubEvent(event);
+      expect(result).not.toBeNull();
+      expect(result?.type).toBe("WatchEvent");
+    });
+
+    test("rejects other actions", () => {
+      const event = {
+        ...baseEvent,
+        type: "WatchEvent",
+        payload: {
+          action: "stopped",
+        },
+      };
+
+      const result = validateGitHubEvent(event);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("ForkEvent", () => {
+    test("validates fork event with forkee info", () => {
+      const event = {
+        ...baseEvent,
+        type: "ForkEvent",
+        payload: {
+          forkee: {
+            full_name: "testuser/repo-fork",
+            html_url: "https://github.com/testuser/repo-fork",
+          },
+        },
+      };
+
+      const result = validateGitHubEvent(event);
+      expect(result).not.toBeNull();
+      expect(result?.type).toBe("ForkEvent");
+    });
+
+    test("allows missing forkee data", () => {
+      const event = {
+        ...baseEvent,
+        type: "ForkEvent",
+        payload: {},
+      };
+
+      const result = validateGitHubEvent(event);
+      expect(result).not.toBeNull();
+    });
+  });
+
   describe("invalid events", () => {
     test("rejects event with missing type", () => {
       const event = {

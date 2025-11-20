@@ -17,4 +17,6 @@ export const ALLOWED_EVENT_TYPES = [
   "reviews",
   "branches",
   "review_comments",
+  "stars",
+  "forks",
 ] as const;

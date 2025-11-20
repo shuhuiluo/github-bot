@@ -11,6 +11,8 @@ import type {
   CreateEvent,
   DeleteEvent,
   PullRequestReviewCommentEvent,
+  WatchEvent,
+  ForkEvent,
 } from "../../../src/types/events-api";
 import type { GitHubPullRequest } from "../../../src/api/github-client";
 
@@ -656,6 +658,69 @@ describe("formatEvent", () => {
         payload: {
           action: "edited",
         },
+      };
+
+      const result = formatEvent(event, new Map());
+      expect(result).toBe("");
+    });
+  });
+
+  describe("WatchEvent", () => {
+    test("formats star notification", () => {
+      const event: WatchEvent = {
+        ...baseEvent,
+        type: "WatchEvent",
+        payload: {
+          action: "started",
+        },
+      };
+
+      const result = formatEvent(event, new Map());
+      expect(result).toContain("⭐");
+      expect(result).toContain("Repository Starred");
+      expect(result).toContain("owner/repo");
+      expect(result).toContain("testuser");
+    });
+
+    test("returns empty string for other actions", () => {
+      const event: WatchEvent = {
+        ...baseEvent,
+        type: "WatchEvent",
+        payload: {
+          action: "stopped",
+        },
+      };
+
+      const result = formatEvent(event, new Map());
+      expect(result).toBe("");
+    });
+  });
+
+  describe("ForkEvent", () => {
+    test("formats fork notification", () => {
+      const event: ForkEvent = {
+        ...baseEvent,
+        type: "ForkEvent",
+        payload: {
+          forkee: {
+            full_name: "testuser/new-repo",
+            html_url: "https://github.com/testuser/new-repo",
+          },
+        },
+      };
+
+      const result = formatEvent(event, new Map());
+      expect(result).toContain("🍴");
+      expect(result).toContain("Repository Forked");
+      expect(result).toContain("testuser/new-repo");
+      expect(result).toContain("https://github.com/testuser/new-repo");
+    });
+
+    test("returns empty string when forkee missing", () => {
+      const event: ForkEvent = {
+        ...baseEvent,
+        type: "ForkEvent",
+        payload: {},
       };
 
       const result = formatEvent(event, new Map());
