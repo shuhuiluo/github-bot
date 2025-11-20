@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { validateGitHubEvent } from "../../../src/types/events-api";
 
 describe("validateGitHubEvent", () => {

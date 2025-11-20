@@ -1,19 +1,20 @@
 import type { BotHandler } from "@towns-protocol/bot";
+
 import {
+  classifyApiError,
   getIssue,
   listIssues,
-  classifyApiError,
   type GitHubIssueList,
 } from "../api/github-client";
-import { stripMarkdown } from "../utils/stripper";
-import { parseCommandArgs, validateIssueFilters } from "../utils/arg-parser";
-import { sendOAuthPrompt } from "../utils/oauth-helpers";
-import type { GitHubOAuthService } from "../services/github-oauth-service";
-import type { SlashCommandEvent } from "../types/bot";
 import {
   formatIssueDetail,
   formatIssueList,
 } from "../formatters/command-formatters";
+import type { GitHubOAuthService } from "../services/github-oauth-service";
+import type { SlashCommandEvent } from "../types/bot";
+import { parseCommandArgs, validateIssueFilters } from "../utils/arg-parser";
+import { sendOAuthPrompt } from "../utils/oauth-helpers";
+import { stripMarkdown } from "../utils/stripper";
 
 export async function handleGhIssue(
   handler: BotHandler,

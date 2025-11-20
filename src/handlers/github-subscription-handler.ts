@@ -1,11 +1,12 @@
 import type { BotHandler } from "@towns-protocol/bot";
-import { stripMarkdown } from "../utils/stripper";
+
 import {
   ALLOWED_EVENT_TYPES,
   DEFAULT_EVENT_TYPES,
 } from "../constants/event-types";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";
+import { stripMarkdown } from "../utils/stripper";
 
 /**
  * Parse and validate event types from --events flag

@@ -1,8 +1,9 @@
-import postgres from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import postgres from "postgres";
 
 const defaultConnection = "postgresql://localhost:5432/github-bot";
 const connectionString = process.env.DATABASE_URL ?? defaultConnection;

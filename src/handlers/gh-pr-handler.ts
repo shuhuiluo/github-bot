@@ -1,16 +1,17 @@
 import type { BotHandler } from "@towns-protocol/bot";
+
 import {
+  classifyApiError,
   getPullRequest,
   listPullRequests,
-  classifyApiError,
   type GitHubPullRequestList,
 } from "../api/github-client";
-import { stripMarkdown } from "../utils/stripper";
-import { parseCommandArgs, validatePrFilters } from "../utils/arg-parser";
-import { sendOAuthPrompt } from "../utils/oauth-helpers";
+import { formatPrDetail, formatPrList } from "../formatters/command-formatters";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SlashCommandEvent } from "../types/bot";
-import { formatPrList, formatPrDetail } from "../formatters/command-formatters";
+import { parseCommandArgs, validatePrFilters } from "../utils/arg-parser";
+import { sendOAuthPrompt } from "../utils/oauth-helpers";
+import { stripMarkdown } from "../utils/stripper";
 
 export async function handleGhPr(
   handler: BotHandler,

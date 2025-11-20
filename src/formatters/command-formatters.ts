@@ -4,10 +4,10 @@
  */
 
 import type {
-  GitHubPullRequestList,
-  GitHubPullRequest,
-  GitHubIssueList,
   GitHubIssue,
+  GitHubIssueList,
+  GitHubPullRequest,
+  GitHubPullRequestList,
 } from "../api/github-client";
 import { truncateText } from "../utils/text";
 

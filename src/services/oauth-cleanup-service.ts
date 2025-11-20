@@ -1,6 +1,7 @@
+import { lt } from "drizzle-orm";
+
 import { db } from "../db";
 import { oauthStates } from "../db/schema";
-import { lt } from "drizzle-orm";
 
 /**
  * OAuthCleanupService - Manages cleanup of expired OAuth states

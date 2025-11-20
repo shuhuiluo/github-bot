@@ -1,16 +1,17 @@
+import { sql } from "drizzle-orm";
 import {
+  boolean,
+  check,
+  index,
+  integer,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
-  integer,
-  primaryKey,
   uniqueIndex,
-  check,
-  index,
-  boolean,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+
 import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**

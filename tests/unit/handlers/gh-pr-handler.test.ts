@@ -1,13 +1,14 @@
-import { describe, expect, test, beforeEach, spyOn } from "bun:test";
-import { handleGhPr } from "../../../src/handlers/gh-pr-handler";
-import { createMockBotHandler } from "../../fixtures/mock-bot-handler";
-import {
-  mockPullRequestResponse,
-  mockMergedPullRequestResponse,
-  mockClosedPullRequestResponse,
-  mockPullRequestListResponse,
-} from "../../fixtures/github-payloads";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
+
 import * as githubClient from "../../../src/api/github-client";
+import { handleGhPr } from "../../../src/handlers/gh-pr-handler";
+import {
+  mockClosedPullRequestResponse,
+  mockMergedPullRequestResponse,
+  mockPullRequestListResponse,
+  mockPullRequestResponse,
+} from "../../fixtures/github-payloads";
+import { createMockBotHandler } from "../../fixtures/mock-bot-handler";
 
 describe("gh_pr handler - show single PR", () => {
   let mockHandler: ReturnType<typeof createMockBotHandler>;

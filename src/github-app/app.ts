@@ -1,6 +1,6 @@
 import { App } from "@octokit/app";
-import { Webhooks } from "@octokit/webhooks";
 import type { Octokit } from "@octokit/core";
+import { Webhooks } from "@octokit/webhooks";
 
 /**
  * GitHubApp - Core GitHub App integration

@@ -1,20 +1,21 @@
 import { describe, expect, test } from "bun:test";
+
+import type { GitHubPullRequest } from "../../../src/api/github-client";
 import { formatEvent } from "../../../src/formatters/events-api";
 import type {
-  PullRequestEvent,
-  IssuesEvent,
-  PushEvent,
-  ReleaseEvent,
-  WorkflowRunEvent,
-  IssueCommentEvent,
-  PullRequestReviewEvent,
   CreateEvent,
   DeleteEvent,
-  PullRequestReviewCommentEvent,
-  WatchEvent,
   ForkEvent,
+  IssueCommentEvent,
+  IssuesEvent,
+  PullRequestEvent,
+  PullRequestReviewCommentEvent,
+  PullRequestReviewEvent,
+  PushEvent,
+  ReleaseEvent,
+  WatchEvent,
+  WorkflowRunEvent,
 } from "../../../src/types/events-api";
-import type { GitHubPullRequest } from "../../../src/api/github-client";
 
 describe("formatEvent", () => {
   const baseEvent = {

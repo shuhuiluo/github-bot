@@ -1,5 +1,5 @@
-import type { BotHandler } from "@towns-protocol/bot";
 import { mock } from "bun:test";
+import type { BotHandler } from "@towns-protocol/bot";
 
 export function createMockBotHandler(): BotHandler {
   const sendMessage = mock(() => Promise.resolve({ eventId: "test-event-id" }));

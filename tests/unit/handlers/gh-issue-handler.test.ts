@@ -1,14 +1,15 @@
-import { describe, expect, test, beforeEach, spyOn } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
+
+import * as githubClient from "../../../src/api/github-client";
 import { handleGhIssue } from "../../../src/handlers/gh-issue-handler";
-import { createMockBotHandler } from "../../fixtures/mock-bot-handler";
 import {
-  mockIssueResponse,
   mockClosedIssueResponse,
-  mockIssueWithoutLabelsResponse,
   mockIssueListResponse,
   mockIssueListWithPullRequestsResponse,
+  mockIssueResponse,
+  mockIssueWithoutLabelsResponse,
 } from "../../fixtures/github-payloads";
-import * as githubClient from "../../../src/api/github-client";
+import { createMockBotHandler } from "../../fixtures/mock-bot-handler";
 
 describe("gh_issue handler - show single issue", () => {
   let mockHandler: ReturnType<typeof createMockBotHandler>;

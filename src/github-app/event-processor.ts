@@ -1,29 +1,29 @@
 import {
-  formatPullRequest,
+  formatFork,
   formatIssue,
+  formatIssueComment,
+  formatPullRequest,
+  formatPullRequestReview,
   formatPush,
   formatRelease,
-  formatWorkflowRun,
-  formatIssueComment,
-  formatPullRequestReview,
-  formatFork,
   formatWatch,
+  formatWorkflowRun,
 } from "../formatters/webhook-events";
+import type { SubscriptionService } from "../services/subscription-service";
+import type { TownsBot } from "../types/bot";
 import type {
-  PullRequestPayload,
-  IssuesPayload,
-  PushPayload,
-  ReleasePayload,
-  WorkflowRunPayload,
-  IssueCommentPayload,
-  PullRequestReviewPayload,
   CreatePayload,
   DeletePayload,
   ForkPayload,
+  IssueCommentPayload,
+  IssuesPayload,
+  PullRequestPayload,
+  PullRequestReviewPayload,
+  PushPayload,
+  ReleasePayload,
   WatchPayload,
+  WorkflowRunPayload,
 } from "../types/webhooks";
-import type { TownsBot } from "../types/bot";
-import type { SubscriptionService } from "../services/subscription-service";
 
 /**
  * EventProcessor - Routes webhook events to formatters and sends to subscribed channels

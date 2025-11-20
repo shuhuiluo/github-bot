@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { handleGhIssue } from "../../src/handlers/gh-issue-handler";
 import { createMockBotHandler } from "../fixtures/mock-bot-handler";
 

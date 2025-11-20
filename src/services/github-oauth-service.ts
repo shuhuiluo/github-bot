@@ -1,14 +1,16 @@
-import { GitHubApp } from "../github-app/app";
-import { db } from "../db";
-import { githubUserTokens, oauthStates } from "../db/schema";
-import { eq } from "drizzle-orm";
 import {
-  randomBytes,
-  createHash,
   createCipheriv,
   createDecipheriv,
+  createHash,
+  randomBytes,
 } from "crypto";
+
 import { Octokit } from "@octokit/rest";
+import { eq } from "drizzle-orm";
+
+import { db } from "../db";
+import { githubUserTokens, oauthStates } from "../db/schema";
+import { GitHubApp } from "../github-app/app";
 
 /**
  * GitHubOAuthService - Manages OAuth authentication for Towns users

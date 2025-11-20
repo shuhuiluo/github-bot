@@ -4,15 +4,15 @@
  */
 
 import type {
-  PullRequestPayload,
+  ForkPayload,
+  IssueCommentPayload,
   IssuesPayload,
+  PullRequestPayload,
+  PullRequestReviewPayload,
   PushPayload,
   ReleasePayload,
-  WorkflowRunPayload,
-  IssueCommentPayload,
-  PullRequestReviewPayload,
-  ForkPayload,
   WatchPayload,
+  WorkflowRunPayload,
 } from "../types/webhooks";
 import { buildMessage, getPrEventEmoji, getPrEventHeader } from "./shared";
 

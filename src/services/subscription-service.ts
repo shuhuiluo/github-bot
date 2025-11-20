@@ -1,10 +1,11 @@
+import { and, eq } from "drizzle-orm";
+
+import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 import { db } from "../db";
 import { githubSubscriptions } from "../db/schema";
-import { eq, and } from "drizzle-orm";
+import { InstallationService } from "../github-app/installation-service";
 import { GitHubOAuthService } from "./github-oauth-service";
 import { UserOAuthClient, type RepositoryInfo } from "./user-oauth-client";
-import { InstallationService } from "../github-app/installation-service";
-import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**
  * Subscription request parameters

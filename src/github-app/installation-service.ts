@@ -1,12 +1,13 @@
+import { and, eq } from "drizzle-orm";
+
 import { db } from "../db";
 import { githubInstallations, installationRepositories } from "../db/schema";
-import { eq, and } from "drizzle-orm";
+import type { SubscriptionService } from "../services/subscription-service";
 import type {
   InstallationPayload,
   InstallationRepositoriesPayload,
 } from "../types/webhooks";
 import type { GitHubApp } from "./app";
-import type { SubscriptionService } from "../services/subscription-service";
 
 /**
  * InstallationService - Manages GitHub App installation lifecycle

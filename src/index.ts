@@ -1,23 +1,24 @@
-import { makeTownsBot } from "@towns-protocol/bot";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
+import { makeTownsBot } from "@towns-protocol/bot";
+
 import commands from "./commands";
-import { handleGhIssue } from "./handlers/gh-issue-handler";
-import { handleGhPr } from "./handlers/gh-pr-handler";
-import { handleGithubSubscription } from "./handlers/github-subscription-handler";
-import { PollingService } from "./services/polling-service";
 import { db, dbReady } from "./db";
 import { githubInstallations } from "./db/schema";
 import { GitHubApp } from "./github-app/app";
-import { WebhookProcessor } from "./github-app/webhook-processor";
-import { InstallationService } from "./github-app/installation-service";
 import { EventProcessor } from "./github-app/event-processor";
+import { InstallationService } from "./github-app/installation-service";
+import { WebhookProcessor } from "./github-app/webhook-processor";
+import { handleGhIssue } from "./handlers/gh-issue-handler";
+import { handleGhPr } from "./handlers/gh-pr-handler";
+import { handleGithubSubscription } from "./handlers/github-subscription-handler";
 import { handleGitHubWebhook } from "./routes/github-webhook";
 import { handleOAuthCallback } from "./routes/oauth-callback";
-import { UserOAuthClient } from "./services/user-oauth-client";
 import { GitHubOAuthService } from "./services/github-oauth-service";
 import { OAuthCleanupService } from "./services/oauth-cleanup-service";
+import { PollingService } from "./services/polling-service";
 import { SubscriptionService } from "./services/subscription-service";
+import { UserOAuthClient } from "./services/user-oauth-client";
 
 await dbReady;
 console.log("✅ Database ready (schema ensured)");

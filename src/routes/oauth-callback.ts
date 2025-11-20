@@ -1,9 +1,10 @@
 import type { Context } from "hono";
+
+import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { TownsBot } from "../types/bot";
 import { escapeHtml } from "../utils/html-escape";
-import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**
  * OAuth callback route handler

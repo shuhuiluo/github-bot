@@ -1,4 +1,5 @@
 import type { BotHandler } from "@towns-protocol/bot";
+
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 
 /**

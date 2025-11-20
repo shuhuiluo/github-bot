@@ -1,8 +1,9 @@
-import { describe, expect, test, beforeEach, spyOn } from "bun:test";
-import { handleGithubSubscription } from "../../../src/handlers/github-subscription-handler";
-import { createMockBotHandler } from "../../fixtures/mock-bot-handler";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
+
 import * as githubClient from "../../../src/api/github-client";
 import { dbService } from "../../../src/db";
+import { handleGithubSubscription } from "../../../src/handlers/github-subscription-handler";
+import { createMockBotHandler } from "../../fixtures/mock-bot-handler";
 
 describe("github subscription handler", () => {
   let mockHandler: ReturnType<typeof createMockBotHandler>;
