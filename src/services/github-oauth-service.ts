@@ -26,8 +26,20 @@ export class GitHubOAuthService {
 
   constructor(githubApp: GitHubApp) {
     this.githubApp = githubApp;
-    this.redirectUrl =
-      process.env.OAUTH_REDIRECT_URL || `${process.env.BOT_URL}/oauth/callback`;
+
+    // Validate redirect URL configuration
+    const oauthRedirectUrl = process.env.OAUTH_REDIRECT_URL;
+    const publicUrl = process.env.PUBLIC_URL;
+
+    if (oauthRedirectUrl) {
+      this.redirectUrl = oauthRedirectUrl;
+    } else if (publicUrl) {
+      this.redirectUrl = `${publicUrl}/oauth/callback`;
+    } else {
+      throw new Error(
+        "OAUTH_REDIRECT_URL or PUBLIC_URL must be configured for OAuth callbacks"
+      );
+    }
 
     // Derive 32-byte encryption key from JWT_SECRET using SHA-256
     const jwtSecret = process.env.JWT_SECRET;
