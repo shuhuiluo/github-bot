@@ -66,9 +66,9 @@ Thank you for your interest in contributing! This guide covers development setup
 #### GitHub App (Optional - Enables Real-Time Webhooks)
 
 | Variable                        | Description                                | How to Get                                                 |
-| ------------------------------- | ------------------------------------------ | ---------------------------------------------------------- |
+|---------------------------------| ------------------------------------------ | ---------------------------------------------------------- |
 | `GITHUB_APP_ID`                 | GitHub App ID                              | GitHub App settings page                                   |
-| `GITHUB_APP_PRIVATE_KEY_BASE64` | Base64-encoded private key                 | Download `.pem`, encode: `base64 -i key.pem \| tr -d '\n'` |
+| `GITHUB_APP_PRIVATE_KEY_BASE64` | Base64-encoded private key                 | Download `.pem`, encode: `base64 -i key.pem | tr -d '\n'`  |
 | `GITHUB_APP_CLIENT_ID`          | OAuth client ID (format: `Iv1.abc123`)     | GitHub App OAuth settings                                  |
 | `GITHUB_APP_CLIENT_SECRET`      | OAuth client secret                        | GitHub App OAuth settings                                  |
 | `GITHUB_WEBHOOK_SECRET`         | Webhook signature secret                   | Generate: `openssl rand -hex 32`                           |
