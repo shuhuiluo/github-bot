@@ -1,824 +1,486 @@
 # GitHub App Implementation Plan
 
-## Executive Summary
+## Overview
 
-This document provides a complete implementation plan for adding GitHub App webhook support to the Towns GitHub bot,
-while maintaining backward compatibility with the existing Events API polling (legacy) approach. The solution uses a *
-*single JavaScript application** that handles both Towns and GitHub webhooks, optimized for deployment on **Render**.
+This document describes the GitHub App integration for the Towns Protocol bot, which bridges GitHub activity with Towns channels through real-time webhooks and fallback polling.
 
-## Part 1: Current Implementation - Events API (Legacy)
+### Towns Protocol Context
 
-### Critical Limitations
+**Towns Protocol** is a decentralized communication platform where users organize into **spaces** (communities) containing **channels** (topic-specific streams). Users interact via:
 
-Our investigation revealed that GitHub's Events API has fundamental limitations:
+- **Slash commands** (e.g., `/github subscribe owner/repo`)
+- **Messages** with bot mentions and replies
+- **Reactions** and threaded conversations
 
-1. **Missing PR Close/Merge Events**: Out of 99 events analyzed, found 6 `PullRequestEvent` - ALL with
-   `action:"opened"`, ZERO with `action:"closed"`
-2. **Empty Commit Data**: All `PushEvent` instances have `commits:[]` (empty array)
-3. **5-Minute Polling Delay**: Not real-time, impacts user experience
-4. **Best-Effort Delivery**: No guarantees on event completeness
+The bot receives Towns events via webhooks at `/webhook`, processes them, and sends formatted messages back to channels.
 
-### Why This Happens
+## Problem: Events API Limitations
 
-GitHub's Events API is designed for activity feeds, not reliable event delivery. When PRs are merged via squash/rebase
-or auto-merge, the Events API often doesn't publish the close event, and push events arrive with empty commit arrays.
+GitHub's Events API has critical limitations:
 
-### What Works vs What Doesn't
+| Issue                   | Impact                                      |
+| ----------------------- | ------------------------------------------- |
+| Missing PR merge events | No notifications when PRs are closed/merged |
+| Empty commit data       | Push events contain `commits: []`           |
+| 5-minute polling delay  | Not real-time                               |
+| Best-effort delivery    | No guarantees on completeness               |
 
-**Works with Events API:**
+**Root cause**: Events API is designed for activity feeds, not reliable event delivery.
 
-- ✅ PR opens
-- ✅ Issues opened/closed
-- ✅ Reviews, Comments, Releases (if subscribed)
-- ✅ Branch create/delete
+## Solution: GitHub App with Dual-Mode Operation
 
-**Doesn't Work:**
-
-- ❌ PR merges (no closed events)
-- ❌ Commit messages (empty arrays)
-- ❌ Real-time notifications
-- ❌ Guaranteed delivery
-
-## Part 2: Solution - GitHub App Implementation
-
-### Why GitHub App?
-
-| Feature         | Events API (Legacy) | GitHub App (New)    |
-|-----------------|---------------------|---------------------|
-| PR merge events | ❌ Missing           | ✅ Complete          |
-| Commit data     | ❌ Empty             | ✅ Full details      |
-| Delivery        | ⚠️ Best effort      | ✅ Best-effort with retries |
-| Latency         | ❌ 5-min polling     | ✅ Real-time         |
-| Setup           | ✅ Easy (PAT)        | ✅ One-click install |
-| Webhooks        | ❌ Manual per repo   | ✅ Automatic         |
-
-### Architecture: Single App, Two Webhooks
-
-The implementation adds GitHub webhook support to the **existing Towns bot application**:
+### Architecture
 
 ```
-┌────────────────────────────────────────────┐
-│         Single Hono Application            │
-├────────────────────────────────────────────┤
-│                                            │
-│  POST /webhook         ← Towns events      │
-│  POST /github-webhook  ← GitHub App events │
-│  GET /health          ← Health checks      │
-│                                            │
-│  • Same process                            │
-│  • Same database (SQLite)                  │
-│  • Same bot instance                       │
-│  • Deployed on Render                      │
-└────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│          Single Hono Application            │
+├─────────────────────────────────────────────┤
+│                                             │
+│  POST /webhook         ← Towns Protocol     │
+│  POST /github-webhook  ← GitHub App         │
+│  GET  /health         ← Health checks       │
+│                                             │
+│  • Single process, single database          │
+│  • Deployed on Render                       │
+│  • Dual-mode: webhooks OR polling           │
+└─────────────────────────────────────────────┘
 ```
 
-**Key Points:**
+### Delivery Modes
 
-- No separate services or containers needed
-- Both webhook endpoints in the same `src/index.ts`
-- Shared database and bot instance
-- Single deployment on Render
+**Real-time Webhooks (Preferred):**
 
-## Part 3: Complete Implementation Specification
+- Requires GitHub App installation on repository
+- Instant delivery (< 1 second latency)
+- Works for public AND private repos
+- Complete event data guaranteed
 
-### 1. GitHub App Backend Code
+**Polling Fallback (Legacy):**
 
-#### 1.1 Core App Module (`src/github-app/app.ts`)
+- No installation required
+- 5-minute polling interval
+- Only works for **public** repos
+- Missing events (PR merges, commit data)
 
-```typescript
-import { App } from "@octokit/app";
-import { Webhooks } from "@octokit/webhooks";
+### Key Design Decisions
 
-export class GitHubApp {
-  private app: App;
-  public webhooks: Webhooks; // Public for route registration in src/index.ts
+1. **Dual-mode architecture**: Automatically use webhooks when app installed, fall back to polling otherwise
+2. **No manual webhook configuration**: GitHub App manages webhooks automatically
+3. **Idempotency**: Track webhook deliveries by `X-GitHub-Delivery` header to prevent duplicates
+4. **Database-backed state**: All installation and delivery state persisted in SQLite
+5. **Foreign key CASCADE**: Auto-cleanup when installations deleted
 
-  constructor() {
-    this.app = new App({
-      appId: process.env.GITHUB_APP_ID!,
-      privateKey: Buffer.from(process.env.GITHUB_APP_PRIVATE_KEY_BASE64!, "base64").toString(),
-      oauth: {
-        clientId: process.env.GITHUB_APP_CLIENT_ID!,
-        clientSecret: process.env.GITHUB_APP_CLIENT_SECRET!,
-      },
-    });
+## Database Schema
 
-    this.webhooks = new Webhooks({
-      secret: process.env.GITHUB_WEBHOOK_SECRET!,
-    });
-
-    this.registerWebhookHandlers();
-  }
-
-  // Get installation-scoped Octokit instance
-  // Octokit internally handles JWT generation and installation token caching
-  async getInstallationOctokit(installationId: number) {
-    return await this.app.getInstallationOctokit(installationId);
-  }
-
-  private registerWebhookHandlers() {
-    // Event handlers registration
-    // Note: The handleXYZ methods below delegate to EventProcessor methods
-    // for routing to formatters and sending to subscribed Towns channels
-    this.webhooks.on("pull_request", this.handlePullRequest.bind(this));
-    this.webhooks.on("push", this.handlePush.bind(this));
-    this.webhooks.on("issues", this.handleIssues.bind(this));
-    this.webhooks.on("issue_comment", this.handleIssueComment.bind(this));
-    this.webhooks.on("release", this.handleRelease.bind(this));
-    this.webhooks.on("workflow_run", this.handleWorkflowRun.bind(this));
-    this.webhooks.on("installation", this.handleInstallation.bind(this));
-    this.webhooks.on("installation_repositories", this.handleInstallationRepos.bind(this));
-  }
-}
-```
-
-#### 1.2 Webhook Processing with Idempotency (`src/github-app/webhook-processor.ts`)
-
-```typescript
-// Idempotency tracking to prevent duplicate processing
-// NOTE: Production deployments MUST use the webhook_deliveries database table
-// instead of in-memory Set to ensure idempotency across restarts and replicas
-export class WebhookProcessor {
-  private processedDeliveries: Set<string> = new Set();
-
-  async isProcessed(deliveryId: string): Promise<boolean> {
-    // In production, check database instead of in-memory Set
-    return this.processedDeliveries.has(deliveryId);
-  }
-
-  async markProcessed(deliveryId: string): Promise<void> {
-    this.processedDeliveries.add(deliveryId);
-    // In production, store in webhook_deliveries table
-  }
-}
-```
-
-### 2. Raw Body Requirements for Webhook Verification
-
-**IMPORTANT**: Webhook signature verification requires the **raw, unmodified request body**.
-
-The webhook route is registered before any body-parsing middleware to guarantee access to the raw request body.
-
-When using `@octokit/webhooks` with Hono or Express, you must:
-1. Access the raw body buffer BEFORE any JSON parsing middleware
-2. Pass the raw body string to `webhooks.verifyAndReceive()`
-3. Never use parsed JSON for signature verification
-
-```typescript
-// Hono integration example showing raw body handling
-app.post("/github-webhook", async (c) => {
-  // Get raw body - CRITICAL for signature verification
-  const body = await c.req.text();
-  const signature = c.req.header("x-hub-signature-256");
-  const event = c.req.header("x-github-event");
-  const deliveryId = c.req.header("x-github-delivery");
-
-  // Webhooks.verifyAndReceive handles signature verification internally
-  try {
-    await githubApp.webhooks.verifyAndReceive({
-      id: deliveryId!,
-      name: event as any,
-      signature: signature!,
-      payload: body, // Must be raw string, not parsed JSON
-    });
-    return c.json({ ok: true });
-  } catch (error) {
-    console.error("Webhook verification failed:", error);
-    return c.json({ error: "Invalid signature" }, 401);
-  }
-});
-```
-
-### 3. Event Processing Pipeline
-
-#### 3.1 Event Router (`src/github-app/event-processor.ts`)
-
-```typescript
-export class EventProcessor {
-  async processWebhookEvent(event: any, eventType: string) {
-    // Route to appropriate handler
-    switch (eventType) {
-      case "pull_request":
-        return this.processPullRequest(event);
-      case "push":
-        return this.processPush(event);
-      case "issues":
-        return this.processIssues(event);
-      case "issue_comment":
-        return this.processIssueComment(event);
-      case "release":
-        return this.processRelease(event);
-      case "workflow_run":
-        return this.processWorkflowRun(event);
-      case "installation":
-        return this.processInstallation(event);
-      default:
-        console.log(`Unhandled event type: ${eventType}`);
-    }
-  }
-
-  private async processPullRequest(event: any) {
-    const { action, pull_request, repository, installation } = event;
-
-    // Get subscribed channels for this repo
-    const channels = await dbService.getRepoSubscribers(repository.full_name);
-
-    // Filter by event preferences
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("pr")
-    );
-
-    // Format message using existing formatter
-    const message = formatWebhookPullRequest({
-      action,
-      pull_request,
-      repository
-    });
-
-    // Send to all interested channels
-    for (const channel of interestedChannels) {
-      await bot.sendMessage(channel.channelId, message);
-    }
-  }
-
-  private async processPush(event: any) {
-    const { commits, repository, ref, installation } = event;
-
-    // NOW WE HAVE FULL COMMIT DATA!
-    const channels = await dbService.getRepoSubscribers(repository.full_name);
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("commits")
-    );
-
-    const message = formatWebhookPush({
-      commits, // Full commit details!
-      repository,
-      ref
-    });
-
-    for (const channel of interestedChannels) {
-      await bot.sendMessage(channel.channelId, message);
-    }
-  }
-}
-```
-
-### 4. Installation Lifecycle Management
-
-#### 4.1 Installation Service (`src/github-app/installation-service.ts`)
-
-```typescript
-export class InstallationService {
-  async handleInstallationCreated(event: any) {
-    const { installation, repositories } = event;
-
-    // Store installation in database
-    await db.insert(githubInstallations).values({
-      installationId: installation.id,
-      accountLogin: installation.account.login,
-      accountType: installation.account.type,
-      installedAt: Date.now(),
-      appSlug: installation.app_slug,
-    });
-
-    // Store repositories in normalized table
-    for (const repo of repositories) {
-      await db.insert(installationRepositories).values({
-        installationId: installation.id,
-        repoFullName: repo.full_name,
-        addedAt: Date.now(),
-      });
-    }
-
-    // Notify subscribed channels about new installation
-    for (const repo of repositories) {
-      const channels = await dbService.getRepoSubscribers(repo.full_name);
-      for (const channel of channels) {
-        await bot.sendMessage(
-          channel.channelId,
-          `✅ GitHub App installed for ${repo.full_name}! Switching to real-time webhook delivery.`
-        );
-      }
-    }
-  }
-
-  async handleInstallationDeleted(event: any) {
-    const { installation } = event;
-
-    // Get repos before deletion
-    const repos = await this.getInstallationRepos(installation.id);
-
-    // Remove from database (cascade deletes repositories)
-    await db.delete(githubInstallations)
-      .where(eq(githubInstallations.installationId, installation.id));
-
-    // Notify channels
-    for (const repo of repos) {
-      const channels = await dbService.getRepoSubscribers(repo);
-      for (const channel of channels) {
-        await bot.sendMessage(
-          channel.channelId,
-          `⚠️ GitHub App uninstalled for ${repo}. Falling back to polling mode.`
-        );
-      }
-    }
-  }
-
-  async handleRepositoriesAdded(event: any) {
-    const { installation, repositories_added } = event;
-
-    // Add new repositories to normalized table
-    for (const repo of repositories_added) {
-      await db.insert(installationRepositories).values({
-        installationId: installation.id,
-        repoFullName: repo.full_name,
-        addedAt: Date.now(),
-      }).onConflictDoNothing();
-    }
-  }
-
-  async handleRepositoriesRemoved(event: any) {
-    const { installation, repositories_removed } = event;
-
-    // Remove repositories from normalized table
-    for (const repo of repositories_removed) {
-      await db.delete(installationRepositories)
-        .where(
-          and(
-            eq(installationRepositories.installationId, installation.id),
-            eq(installationRepositories.repoFullName, repo.full_name)
-          )
-        );
-    }
-  }
-
-  async getInstallationRepos(installationId: number): Promise<string[]> {
-    const repos = await db.select()
-      .from(installationRepositories)
-      .where(eq(installationRepositories.installationId, installationId));
-
-    return repos.map(r => r.repoFullName);
-  }
-
-  async isRepoInstalled(repo: string): Promise<number | null> {
-    // Query normalized table with proper indexing
-    const installation = await db.select()
-      .from(installationRepositories)
-      .where(eq(installationRepositories.repoFullName, repo))
-      .limit(1);
-
-    return installation[0]?.installationId || null;
-  }
-}
-```
-
-### 5. Subscription System Integration
-
-#### 5.1 Enhanced Subscription Handler (`src/handlers/github-subscription-handler.ts`)
-
-```typescript
-// Add to existing handler
-async function handleGithubSubscribe(handler: BotHandler, event: any) {
-  const { channelId, repo, eventTypes } = event;
-
-  // Check if GitHub App is installed
-  const installationId = await installationService.isRepoInstalled(repo);
-
-  if (!installationId) {
-    // Generate installation URL
-    const installUrl = `https://github.com/apps/${process.env.GITHUB_APP_SLUG}/installations/new?` +
-      `suggested_target_id=${repo.split('/')[0]}&repository_ids=${await getRepoId(repo)}`;
-
-    await handler.sendMessage(
-      channelId,
-      `⚠️ GitHub App not installed for ${repo}.\n\n` +
-      `For real-time events and full commit data, install the GitHub App:\n${installUrl}\n\n` +
-      `Subscribing with legacy polling mode (5-minute delay, limited events).`
-    );
-  } else {
-    await handler.sendMessage(
-      channelId,
-      `✅ Subscribed to ${repo} with real-time webhook delivery!`
-    );
-  }
-
-  // Store subscription (works for both modes)
-  await dbService.subscribe(channelId, repo, eventTypes);
-}
-```
-
-### 6. Dual-Mode Service
-
-#### 6.1 Hybrid Polling/Webhook Service (`src/services/dual-mode-service.ts`)
-
-```typescript
-export class DualModeService {
-  async processRepository(repo: string) {
-    // Check if GitHub App is installed
-    const installationId = await installationService.isRepoInstalled(repo);
-
-    if (installationId) {
-      // Webhook mode - do nothing (webhooks handle automatically)
-      console.log(`${repo}: Using GitHub App webhooks (real-time)`);
-      return;
-    }
-
-    // Legacy polling mode
-    console.log(`${repo}: Using Events API polling (5-min delay)`);
-    await this.pollRepository(repo);
-  }
-
-  private async pollRepository(repo: string) {
-    // Existing polling logic from polling-service.ts
-    const events = await fetchRepoEvents(repo);
-    // ... process events
-  }
-}
-```
-
-### 7. Database Schema
+### github_installations
 
 ```sql
--- Add to existing schema
-CREATE TABLE IF NOT EXISTS github_installations
-(
-    installation_id INTEGER PRIMARY KEY,
-    account_login TEXT NOT NULL,
-    account_type TEXT NOT NULL CHECK (account_type IN ('Organization', 'User')),
-    installed_at INTEGER NOT NULL,
-    suspended_at INTEGER,
-    app_slug TEXT NOT NULL DEFAULT 'towns-github-bot'
+CREATE TABLE github_installations (
+  installation_id INTEGER PRIMARY KEY,
+  account_login TEXT NOT NULL,
+  account_type TEXT NOT NULL CHECK(account_type IN ('Organization', 'User')),
+  installed_at INTEGER NOT NULL,
+  suspended_at INTEGER,
+  app_slug TEXT NOT NULL DEFAULT 'towns-github-bot'
+);
+```
+
+### installation_repositories
+
+```sql
+CREATE TABLE installation_repositories (
+  installation_id INTEGER NOT NULL,
+  repo_full_name TEXT NOT NULL,
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (installation_id, repo_full_name),
+  FOREIGN KEY (installation_id)
+    REFERENCES github_installations(installation_id)
+    ON DELETE CASCADE
 );
 
--- Normalized repository table - NO JSON columns
-CREATE TABLE IF NOT EXISTS installation_repositories
-(
-    installation_id INTEGER NOT NULL,
-    repo_full_name TEXT NOT NULL,
-    added_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    PRIMARY KEY (installation_id, repo_full_name),
-    FOREIGN KEY (installation_id) REFERENCES github_installations(installation_id) ON DELETE CASCADE
-);
-
--- Webhook deliveries with proper idempotency key
-CREATE TABLE IF NOT EXISTS webhook_deliveries
-(
-    delivery_id TEXT PRIMARY KEY,  -- X-GitHub-Delivery header value
-    installation_id INTEGER,
-    event_type TEXT NOT NULL,
-    delivered_at INTEGER NOT NULL,
-    status TEXT DEFAULT 'pending',
-    error TEXT,
-    retry_count INTEGER DEFAULT 0
-);
-
--- Indexes for efficient queries
 CREATE INDEX idx_installation_repos_by_name ON installation_repositories(repo_full_name);
-CREATE INDEX idx_installation_repos_by_install ON installation_repositories(installation_id);
+```
+
+### github_subscriptions
+
+```sql
+CREATE TABLE github_subscriptions (
+  subscription_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  space_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  repo_full_name TEXT NOT NULL,
+  delivery_mode TEXT NOT NULL CHECK (delivery_mode IN ('webhook', 'polling')),
+  is_private INTEGER NOT NULL CHECK (is_private IN (0, 1)),
+  created_by_towns_user_id TEXT NOT NULL,
+  created_by_github_login TEXT,
+  installation_id INTEGER,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(space_id, channel_id, repo_full_name),
+  FOREIGN KEY (installation_id)
+    REFERENCES github_installations(installation_id)
+    ON DELETE SET NULL
+);
+
+CREATE INDEX idx_subscriptions_by_repo ON github_subscriptions(repo_full_name);
+CREATE INDEX idx_subscriptions_by_channel ON github_subscriptions(channel_id);
+```
+
+### webhook_deliveries
+
+```sql
+CREATE TABLE webhook_deliveries (
+  delivery_id TEXT PRIMARY KEY,  -- X-GitHub-Delivery header
+  installation_id INTEGER,
+  event_type TEXT NOT NULL,
+  delivered_at INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending', 'success', 'failed')),
+  error TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX idx_deliveries_status ON webhook_deliveries(status, delivered_at);
 ```
 
-### 8. Webhook Server Implementation
+**Note**: `installation_id` in `webhook_deliveries` is nullable because some webhook events don't have installation context. No foreign key constraint to preserve audit trail.
 
-#### 8.1 Hono Integration (`src/index.ts` update)
+## Component Architecture
+
+### Core Components
+
+**Implemented in `src/github-app/`:**
+
+1. **GitHubApp** (`app.ts`)
+   - Octokit App initialization
+   - Webhook event registration
+   - Public `webhooks` property for route registration
+
+2. **EventProcessor** (`event-processor.ts`)
+   - Routes webhook events to formatters
+   - Filters by channel event type preferences
+   - Sends to subscribed Towns channels
+
+3. **InstallationService** (`installation-service.ts`)
+   - Handles installation lifecycle (created/deleted)
+   - Manages repository additions/removals
+   - Checks installation status per repo
+   - Notifies Towns channels of mode changes
+
+4. **WebhookProcessor** (`webhook-processor.ts`)
+   - Idempotency tracking via deliveryId
+   - Cleanup of old webhook records
+   - Database-backed (no in-memory state)
+
+### Event Flow
+
+```
+GitHub Event
+  → POST /github-webhook
+  → JWT verify + HMAC signature check (Octokit)
+  → Check idempotency (webhook_deliveries table)
+  → EventProcessor routes to formatter
+  → Filter by channel preferences
+  → Send to Towns channels
+  → Mark as processed (success only)
+```
+
+**Critical**: Failed webhooks are NOT marked as processed, allowing GitHub's retry mechanism to work.
+
+## Type System
+
+### Webhook Types
+
+Using `@octokit/webhooks` official types:
 
 ```typescript
-import { GitHubApp } from "./github-app/app";
-import { WebhookProcessor } from "./github-app/webhook-processor";
+import type {
+  EmitterWebhookEvent,
+  EmitterWebhookEventName,
+} from "@octokit/webhooks";
 
-const githubApp = new GitHubApp();
-const webhookProcessor = new WebhookProcessor();
+type WebhookPayload<T extends EmitterWebhookEventName> =
+  EmitterWebhookEvent<T>["payload"];
 
-// Add GitHub webhook endpoint
-// IMPORTANT: Do not use body parsing middleware before this endpoint
-app.post("/github-webhook", async (c) => {
-  // Get headers for webhook processing
-  const deliveryId = c.req.header("x-github-delivery");
-  const signature = c.req.header("x-hub-signature-256");
-  const event = c.req.header("x-github-event");
-
-  if (!deliveryId || !signature || !event) {
-    return c.json({ error: "Missing required headers" }, 400);
-  }
-
-  // Check idempotency
-  if (await webhookProcessor.isProcessed(deliveryId)) {
-    return c.json({ message: "Already processed" }, 200);
-  }
-
-  try {
-    // Get raw body for signature verification
-    const body = await c.req.text();
-
-    // Use Octokit's built-in verification and processing
-    await githubApp.webhooks.verifyAndReceive({
-      id: deliveryId,
-      name: event as any,
-      signature: signature,
-      payload: body, // Must be raw string, not parsed JSON
-    });
-
-    // Mark as processed for idempotency
-    await webhookProcessor.markProcessed(deliveryId);
-
-    return c.json({ ok: true });
-  } catch (error) {
-    console.error("Webhook error:", error);
-    if (error.message?.includes("signature")) {
-      return c.json({ error: "Invalid signature" }, 401);
-    }
-    return c.json({ error: "Processing failed" }, 500);
-  }
-});
-
-// Health check with GitHub App status
-app.get("/health", async (c) => {
-  const appInstallations = await db.select()
-    .from(githubInstallations)
-    .limit(1);
-
-  return c.json({
-    status: "healthy",
-    githubApp: {
-      configured: !!process.env.GITHUB_APP_ID,
-      installations: appInstallations.length
-    },
-    polling: {
-      active: pollingService.isRunning()
-    }
-  });
-});
+export type PullRequestPayload = WebhookPayload<"pull_request">;
+export type IssuesPayload = WebhookPayload<"issues">;
+// ... etc
 ```
 
-### 9. Configuration Files
+**Why not `@octokit/webhooks-types`?** That package is legacy (community JSON schemas). `@octokit/webhooks` uses official OpenAPI types.
 
-#### 9.1 Environment Variables (`.env.production`)
+## Subscription Flow
+
+### Public Repositories
+
+When a user runs `/github subscribe owner/repo` in a Towns channel:
+
+1. **Require GitHub OAuth linking**
+   - Check if the Towns user has linked their GitHub account
+   - If not linked, respond with "Connect your GitHub account" prompt and OAuth URL
+
+2. **Resolve and validate the repository**
+   - Call `GET /repos/{owner}/{repo}` using the user's OAuth token
+   - If 404/403 response → treat as "repo not found or no access" and fail
+   - Extract from response:
+     - `repo_full_name` (normalized owner/repo)
+     - `private` flag (true/false)
+     - `owner.login` (account name)
+     - `owner.type` (`User` or `Organization`)
+     - `owner.id` (numeric ID for installation links)
+
+3. **Determine delivery mode**
+   - If `private == true`, follow Private Repositories flow instead
+   - If `private == false` (public repo):
+     - Query `installation_repositories` via `InstallationService` to check if any installation covers this `repo_full_name`
+     - If covered → set `delivery_mode = 'webhook'` and store the `installation_id`
+     - If not covered → set `delivery_mode = 'polling'` and `installation_id = NULL`
+
+4. **Persist subscription**
+   - Insert into `github_subscriptions` table with:
+     - `space_id`, `channel_id` from the Towns event
+     - `repo_full_name` (validated from GitHub)
+     - `delivery_mode` ('webhook' or 'polling')
+     - `is_private = 0`
+     - `created_by_towns_user_id` (Towns user ID)
+     - `created_by_github_login` (GitHub username from OAuth)
+     - `installation_id` (if webhook mode) or NULL (if polling mode)
+     - `created_at`, `updated_at` timestamps
+
+5. **User messaging**
+   - Success message: `"Subscribed owner/repo to this channel."`
+   - Do NOT expose delivery mode (webhook vs polling) in the message
+   - If `delivery_mode = 'polling'`, append installation suggestion:
+     - Generate URL: `https://github.com/apps/<APP_SLUG>/installations/new/permissions?target_id=<owner.id>`
+     - Use smart heuristics to determine appropriate messaging:
+       - **Personal repo** (`owner.type == 'User' && owner.login == github_user.login`):
+         - "You can install the GitHub App for real-time delivery: [Install]"
+       - **Org repo** (check `GET /user/memberships/orgs/{owner.login}` for `role == 'admin'`):
+         - If admin: "You can install the GitHub App for real-time delivery: [Install]"
+         - If not admin: "Ask an org admin to install the GitHub App for real-time delivery: [Install]"
+
+### Private Repositories
+
+For private repositories:
+
+1. **Require GitHub OAuth linking**
+   - Same as public repositories flow
+
+2. **Validate access**
+   - Call `GET /repos/{owner}/{repo}` using the user's OAuth token
+   - If user has read access, GitHub returns 200 (works for both user-owned and org-owned private repos)
+   - If no access (404/403), return clear error:
+     - `"You don't have access to this repository as <github_login>."`
+
+3. **Require GitHub App installation**
+   - Check `installation_repositories` via `InstallationService` to see if any installation covers this repo
+   - If repo is NOT covered by any installation:
+     - **Do NOT create a subscription**
+     - Return installation URL with error message:
+       - `"This private repository requires the GitHub App to be installed. Install here: https://github.com/apps/<APP_SLUG>/installations/new/permissions?target_id=<owner.id>"`
+   - Note: We do NOT check all channel members' GitHub permissions (intentionally using Slack-style wide model - responsibility lies with the user configuring the subscription)
+
+4. **Persist subscription**
+   - If the repo IS covered by an installation:
+     - Insert into `github_subscriptions` table with:
+       - `delivery_mode = 'webhook'` (private repos MUST use webhooks)
+       - `is_private = 1`
+       - `installation_id` set to the covering installation ID
+       - All other columns same as public repo flow
+
+5. **User messaging**
+   - Success: `"Subscribed private repo owner/repo to this channel."`
+   - Optionally add note: `"Private repo events will be visible to all channel members."`
+
+### Upgrading Subscriptions After Installation
+
+When the GitHub App is newly installed on an account or additional repos are added:
+
+1. **Installation event processing**
+   - `InstallationService` processes `installation` and `installation_repositories` webhook events
+   - Updates `github_installations` and `installation_repositories` tables
+
+2. **Find affected subscriptions**
+   - After processing an `installation_repositories` `"added"` event for a `repo_full_name`:
+     - Query `github_subscriptions` where:
+       - `repo_full_name` matches the newly added repository
+       - `delivery_mode = 'polling'` (currently using fallback mode)
+
+3. **Upgrade to webhook mode**
+   - For each matching subscription:
+     - Update the row to:
+       - `delivery_mode = 'webhook'`
+       - `installation_id = <current installation_id>`
+       - `updated_at = <current timestamp>`
+
+4. **Notify channels**
+   - Send a message to each affected channel:
+     - `"🔄 Upgraded owner/repo to real-time webhook delivery!"`
+   - This provides immediate feedback that the installation was successful
+
+## Configuration
+
+### Environment Variables
 
 ```bash
-# GitHub App Configuration
-GITHUB_APP_ID=YOUR_APP_ID
-GITHUB_APP_PRIVATE_KEY_BASE64=your-base64-encoded-private-key-here
-GITHUB_APP_CLIENT_ID=YOUR_CLIENT_ID
-GITHUB_APP_CLIENT_SECRET=your-client-secret-here
-GITHUB_APP_SLUG=your-app-slug
-GITHUB_WEBHOOK_SECRET=your-webhook-secret-here
+# GitHub App (required for webhooks)
+GITHUB_APP_ID=123456
+GITHUB_APP_PRIVATE_KEY_BASE64=<base64-encoded-pem>
+GITHUB_APP_CLIENT_ID=Iv1.abc123
+GITHUB_APP_CLIENT_SECRET=<secret>
+GITHUB_APP_SLUG=towns-github-bot
+GITHUB_WEBHOOK_SECRET=<random-string>
 
-# Legacy (keep for backward compatibility)
-GITHUB_TOKEN=YOUR_LEGACY_TOKEN
+# Legacy polling (optional fallback)
+GITHUB_TOKEN=ghp_xxx
 
-# Towns Bot Configuration
-APP_PRIVATE_DATA=your-app-private-data-here
-JWT_SECRET=your-jwt-secret-here
-
-# Application
-PUBLIC_URL=https://bot.example.com
-PORT=5123
-NODE_ENV=production
+# Towns Bot
+APP_PRIVATE_DATA=<base64-encoded>
+JWT_SECRET=<secret>
 ```
 
-#### 9.2 GitHub App Manifest (`github-app-manifest.json`)
+### GitHub App Manifest
 
-```json
-{
-  "name": "Towns GitHub Bot",
-  "url": "https://github.com/HereNotThere/bot-github",
-  "hook_attributes": {
-    "url": "https://bot.example.com/github-webhook",
-    "active": true
-  },
-  "redirect_url": "https://bot.example.com/github-app/callback",
-  "callback_urls": [
-    "https://bot.example.com/github-app/callback"
-  ],
-  "setup_url": "https://bot.example.com/github-app/setup",
-  "description": "Real-time GitHub notifications for Towns Protocol",
-  "public": false,
-  "default_permissions": {
-    "contents": "read",
-    "issues": "read",
-    "pull_requests": "read",
-    "metadata": "read",
-    "actions": "read"
-  },
-  "default_events": [
-    "pull_request",
-    "push",
-    "issues",
-    "issue_comment",
-    "release",
-    "workflow_run",
-    "pull_request_review",
-    "pull_request_review_comment",
-    "create",
-    "delete",
-    "installation",
-    "installation_repositories"
-  ]
-}
-```
+Located at `github-app-manifest.json`. Key settings:
 
-### 10. Deployment Configuration
+- `public: true` - Anyone can install
+- `default_permissions`: read-only access to repos
+- `default_events`: repo-level events only (NOT installation events)
+- `redirect_url`: Required field (points to `/health`)
 
-#### 10.1 Render Deployment (Recommended)
+**Note**: Installation/repository events are app-level and automatically enabled.
 
-**Render Web Service Settings:**
+## Implementation Status
 
-```yaml
-# render.yaml (optional - for Infrastructure as Code)
-services:
-  - type: web
-    name: towns-github-bot
-    runtime: node
-    buildCommand: bun install
-    startCommand: bun run src/index.ts
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 5123
-      # Add other env vars in Render dashboard
-```
+### ✅ Completed
 
-**Manual Setup in Render Dashboard:**
+- GitHub App core with Octokit integration
+- Webhook endpoint with signature verification
+- Database schema with foreign key CASCADE
+- CHECK constraints for data integrity
+- Event processor routing to formatters
+- Installation lifecycle management
+- Idempotency tracking (database-backed)
+- Type-safe handlers with consolidated types
+- Dual-mode polling service (skips repos with app)
 
-1. **Build Command**: `bun install`
-2. **Start Command**: `bun run src/index.ts`
-3. **Environment Variables**: Add all from `.env.production` above
-4. **Persistent Disk**: Mount at `/opt/render/project/src` for SQLite database
+### ⚠️ Known Issues
 
-**Key Advantages:**
+1. **Help message outdated**: Says "checked every 5 min" without mentioning app
+2. **Status command incomplete**: Doesn't show per-repo delivery mode
+3. **No private repo detection**: Allows subscription to inaccessible repos
+4. **Generic installation URL**: Doesn't pre-select specific repository
+5. **No installation status command**: Users can't see which repos have app
 
-- No Docker required
-- Automatic HTTPS
-- Built-in health checks
-- Environment variable management
-- Persistent disk for SQLite
+## Remaining Work
 
-#### 10.2 Docker Configuration (Optional - for other platforms)
+### Priority 1: User Experience
 
-Docker is **NOT required for Render**, but provided here for users on other platforms:
+1. **Update `/help` command**
+   - Mention GitHub App option
+   - Explain real-time vs polling
 
-<details>
-<summary>Docker configuration (click to expand)</summary>
+2. **Fix `/github status` command**
+   - Show delivery mode per repo (⚡ Real-time or ⏱️ Polling)
+   - Count and display breakdown
+   - Prompt to install app if repos are polling
 
-```dockerfile
-# Dockerfile
-FROM oven/bun:1-alpine
-WORKDIR /app
-COPY package.json bun.lockb ./
-RUN bun install --frozen-lockfile
-COPY . .
-EXPOSE 5123
-CMD ["bun", "run", "src/index.ts"]
-```
+3. **Private repo handling**
+   - Check repo accessibility before subscribing
+   - Block subscription to private repos without app
+   - Clear error message with installation instructions
 
-```yaml
-# docker-compose.yml
-version: '3.8'
-services:
-  bot:
-    build: .
-    ports:
-      - "5123:5123"
-    env_file: .env.production
-    volumes:
-      - ./github-bot.db:/app/github-bot.db
-    restart: unless-stopped
-```
+### Priority 2: Quality of Life
 
-</details>
+4. **Enhanced subscription messages**
+   - Better formatting with emojis
+   - Clear explanation of what happens next
+   - Expected delay for first event
 
-### 11. Migration Path
+5. **Installation notifications**
+   - More prominent formatting
+   - List which events are now real-time
+   - Suggest verifying with `/github status`
 
-#### Phase 1: Deploy GitHub App (Week 1)
+### Priority 3: Documentation
 
-1. Create GitHub App using manifest
-2. Deploy webhook endpoint
-3. Test with single repository
-4. Monitor webhook delivery
+6. **README updates**
+   - Add GitHub App installation section
+   - Explain dual-mode operation
+   - Document private repo requirements
 
-#### Phase 2: Dual-Mode Operation (Week 2)
+7. **.env.sample improvements**
+   - Better explanations of each variable
+   - Link to GitHub App setup guide
+   - Mark required vs optional variables
 
-1. Update subscription handler with installation detection
-2. Deploy dual-mode service
-3. Existing subscriptions continue with polling
-4. New installations use webhooks
+## Testing Checklist
 
-#### Phase 3: User Migration (Week 3)
+- [ ] Subscribe to public repo without app → polls successfully
+- [ ] Subscribe to public repo with app → receives webhooks
+- [ ] Subscribe to private repo without app → shows error, requires app
+- [ ] Subscribe to private repo with app → receives webhooks
+- [ ] Install app to repo → channel notified, mode switches
+- [ ] Uninstall app from repo → channel notified, falls back to polling
+- [ ] Webhook signature verification rejects invalid requests
+- [ ] Idempotency prevents duplicate event processing
+- [ ] Failed webhooks allow retry (not marked as processed)
+- [ ] Old webhook deliveries cleaned up (lt() comparison works)
 
-1. Add `/github install` command
-2. Notify users about benefits
-3. Track adoption metrics
-4. Phase out polling gradually
+## Deployment Notes
 
-## Part 4: Implementation Checklist
+**Platform**: Render (Web Service)
 
-### Required Components (All Must Be Implemented)
+**Configuration**:
 
-- [ ] **GitHub App Backend** - Complete webhook server with all event handlers
-- [ ] **Authentication Logic** - Use Octokit's built-in JWT/installation-token handling
-- [ ] **Octokit Integration** - App-authenticated API calls
-- [ ] **Installation Lifecycle** - Handle install/uninstall/permission changes
-- [ ] **Subscription System** - Map repos to channels with event filtering
-- [ ] **Event Processing** - Route all event types to formatters
-- [ ] **Multi-tenancy** - Data isolation per installation
-- [ ] **Security** - Signature verification, idempotency, rate limiting
-- [ ] **Deployment Config** - Environment variables, manifests, Render configuration
-- [ ] **Migration Support** - Dual-mode operation for backward compatibility
+- Build: `bun install`
+- Start: `bun run src/index.ts`
+- Environment: Set all variables from `.env.sample`
+- Persistent disk: `/opt/render/project/src` for SQLite
 
-### Success Criteria
+**Webhook URL**: Must be publicly accessible at `https://your-domain.com/github-webhook`
 
-1. **Full Event Coverage**: All PR events including merges with complete data
-2. **Real-time Delivery**: Events delivered in <1 second
-3. **Zero Manual Setup**: Users install app, webhooks work automatically
-4. **Backward Compatible**: Existing polling subscriptions continue working
-5. **Production Ready**: Error handling, retries, monitoring, logging
+## Security Considerations
 
-## Part 5: Testing Strategy
+1. **Signature verification**: All GitHub webhooks verified via Octokit
+2. **Raw body handling**: Webhook route registered before body-parsing middleware
+3. **Idempotency**: Prevents replay attacks and duplicate processing
+4. **Foreign key constraints**: Ensures data integrity
+5. **CHECK constraints**: Validates data at database level
 
-### Local Development
+## Performance Characteristics
 
-```bash
-# 1. Create test GitHub App
-# 2. Use ngrok for webhook tunnel
-ngrok http 5123
+**Webhook mode**:
 
-# 3. Update GitHub App webhook URL to ngrok URL
-# 4. Install app on test repository
-# 5. Trigger events and verify delivery
-```
+- Latency: < 1 second from GitHub event to Towns message
+- Throughput: Limited by Octokit processing (no bottleneck observed)
+- Database: O(1) idempotency check, O(1) installation lookup
 
-### Integration Testing
+**Polling mode**:
 
-```typescript
-// Test webhook signature verification
-describe("Webhook Security", () => {
-  test("rejects invalid signature", async () => {
-    const response = await app.request("/github-webhook", {
-      method: "POST",
-      headers: {
-        "x-hub-signature-256": "invalid",
-        "x-github-event": "push"
-      },
-      body: JSON.stringify({ test: true })
-    });
-    expect(response.status).toBe(401);
-  });
+- Latency: Up to 5 minutes
+- API usage: 1 request per repo per 5 minutes
+- Database: O(n) where n = subscribed repos
 
-  test("accepts valid signature", async () => {
-    // Test with valid HMAC signature
-  });
-});
+**Cleanup**:
 
-// Test installation lifecycle
-describe("Installation Management", () => {
-  test("stores new installation", async () => {
-    // Simulate installation.created event
-  });
+- Webhook deliveries: Periodic cleanup of records > 7 days old
+- Uses `lt()` comparison (not `eq()`)
 
-  test("handles repository changes", async () => {
-    // Simulate installation_repositories event
-  });
-});
-```
+## Future Improvements
 
-## Part 6: Monitoring and Operations
+1. **Repo-specific installation URLs**: Pre-select repository in installation flow
+2. **Test webhook command**: `/github test owner/repo` to verify connectivity
+3. **Health indicators**: Show delivery latency and last event timestamp
+4. **Installation status command**: `/github app-status` to view all installations
+5. **Webhook delivery monitoring**: Track success/failure rates
+6. **Rate limit handling**: Graceful degradation if API limits hit
+7. **Multi-region deployment**: Reduce latency for global users
 
-### Key Metrics
+## References
 
-1. **Webhook Delivery Rate**: Successfully processed / total received
-2. **Event Latency**: Time from GitHub event to Towns message
-3. **Installation Count**: Active GitHub App installations
-4. **Error Rate**: Failed webhooks, token refresh failures
-5. **Legacy vs Webhook**: Repos using polling vs webhooks
-
-### Operational Procedures
-
-1. **Private Key Rotation**:
-    - Generate new private key in GitHub App settings
-    - Update `GITHUB_APP_PRIVATE_KEY_BASE64` environment variable
-    - Restart service
-    - No downtime required
-
-2. **Webhook Secret Rotation**:
-    - Update secret in GitHub App settings
-    - Update `GITHUB_WEBHOOK_SECRET` environment variable
-    - Deploy with dual-secret support during transition
-    - Remove old secret after confirmation
-
-3. **Debugging Webhook Issues**:
-    - Check `/health` endpoint for app status
-    - Review `webhook_deliveries` table for failures
-    - Use GitHub's webhook delivery UI for replay
-    - Check installation permissions
-
-## Summary
-
-This document provides a complete, production-ready implementation plan for migrating from the limited GitHub Events API
-to a full GitHub App integration. The solution maintains backward compatibility while providing real-time, complete
-event data for all GitHub activities.
-
-**Current State**: Events API with critical limitations (legacy)
-**Target State**: GitHub App with automatic webhooks (production-ready)
-**Migration**: Dual-mode operation with gradual user migration
-**Timeline**: 3 weeks from start to full production deployment
+- GitHub App Documentation: https://docs.github.com/apps
+- Octokit SDK: https://github.com/octokit
+- Towns Protocol: https://towns.com
+- Render Deployment: https://render.com
