@@ -14,13 +14,6 @@ export interface RepositoryInfo {
 }
 
 /**
- * Organization membership information
- */
-export interface OrgMembership {
-  role: "admin" | "member" | null;
-}
-
-/**
  * GitHub user profile
  */
 export interface UserProfile {
@@ -71,32 +64,6 @@ export class UserOAuthClient {
         throw new Error(
           `Repository not found or you don't have access: ${owner}/${repo}`
         );
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Check organization membership for the authenticated user
-   * @param token - User's GitHub OAuth access token
-   * @param org - Organization name
-   * @returns Membership information with role
-   */
-  async checkOrgMembership(token: string, org: string): Promise<OrgMembership> {
-    const octokit = new Octokit({ auth: token });
-
-    try {
-      const { data } = await octokit.orgs.getMembershipForAuthenticatedUser({
-        org,
-      });
-
-      return {
-        role: data.role as "admin" | "member",
-      };
-    } catch (error) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      if ((error as any)?.status === 404 || (error as any)?.status === 403) {
-        return { role: null }; // Not a member
       }
       throw error;
     }

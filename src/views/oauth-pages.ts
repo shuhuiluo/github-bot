@@ -13,7 +13,6 @@ interface SubscriptionData {
   deliveryMode?: "webhook" | "polling";
   suggestInstall?: boolean;
   installUrl?: string;
-  isAdmin?: boolean;
   eventTypes?: string;
   error?: string;
 }
@@ -151,9 +150,7 @@ function renderPollingSuccess(c: Context, sub: SubscriptionData) {
   const safeRepo = escapeHtml(sub.repoFullName || "repository");
   const safeEvents = escapeHtml(sub.eventTypes || DEFAULT_EVENT_TYPES);
   const safeInstallUrl = escapeHtml(sub.installUrl || "");
-  const adminMessage = sub.isAdmin
-    ? "You can install the GitHub App for real-time delivery:"
-    : "Ask an admin to install the GitHub App for real-time delivery:";
+  const installMessage = "Install the GitHub App for real-time delivery:";
 
   return c.html(`
     <!DOCTYPE html>
@@ -171,7 +168,7 @@ function renderPollingSuccess(c: Context, sub: SubscriptionData) {
           <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
           <div class="install-section">
             <p>💡 <strong>Want real-time updates?</strong></p>
-            <p>${escapeHtml(adminMessage)}</p>
+            <p>${escapeHtml(installMessage)}</p>
             <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
             <p class="redirect-info">Auto-redirecting to installation in <span id="countdown">5</span> seconds...</p>
             <p class="note">You can close this window and return to Towns.</p>

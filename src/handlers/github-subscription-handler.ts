@@ -114,8 +114,7 @@ async function handleSubscribe(
       channelId,
       `🔐 **GitHub Account Required**\n\n` +
         `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
-        `[Connect GitHub Account](${authUrl})`,
-      { ephemeral: true }
+        `[Connect GitHub Account](${authUrl})`
     );
     return;
   }
@@ -161,11 +160,8 @@ async function handleSubscribe(
 
     // Add installation suggestion for public repos
     if (result.suggestInstall && result.installUrl) {
-      const adminHint = result.isAdmin
-        ? "You can install the GitHub App for real-time delivery:"
-        : "Ask an admin to install the GitHub App for real-time delivery:";
       deliveryInfo +=
-        `\n\n💡 **Want real-time notifications?** ${adminHint}\n` +
+        `\n\n💡 **Want real-time notifications?** Install the GitHub App:\n` +
         `   [Install GitHub App](${result.installUrl})`;
     }
   }

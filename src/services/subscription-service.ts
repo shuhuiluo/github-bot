@@ -30,7 +30,6 @@ export interface SubscribeResult {
   repoFullName?: string;
   deliveryMode?: "webhook" | "polling";
   suggestInstall?: boolean;
-  isAdmin?: boolean;
   eventTypes?: string;
   error?: string;
 }
@@ -103,7 +102,6 @@ export class SubscriptionService {
     let deliveryMode: "webhook" | "polling";
     let installationId: number | null = null;
     let suggestInstall = false;
-    let isUserAdmin = false;
 
     if (repoInfo.isPrivate) {
       // Private repos MUST have GitHub App installed
@@ -135,19 +133,6 @@ export class SubscriptionService {
       } else {
         deliveryMode = "polling";
         suggestInstall = true;
-
-        // Check if user is admin to customize install message
-        if (repoInfo.owner.type === "User") {
-          // Personal repo
-          isUserAdmin = repoInfo.owner.login === githubUser.login;
-        } else {
-          // Org repo - check membership
-          const membership = await this.userClient.checkOrgMembership(
-            githubToken,
-            repoInfo.owner.login
-          );
-          isUserAdmin = membership.role === "admin";
-        }
       }
     }
 
@@ -193,7 +178,6 @@ export class SubscriptionService {
       repoFullName: repoInfo.fullName,
       deliveryMode,
       suggestInstall,
-      isAdmin: isUserAdmin,
       eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
       installUrl: suggestInstall
         ? this.generateInstallUrl(repoInfo.owner.id)

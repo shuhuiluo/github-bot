@@ -60,10 +60,7 @@ export async function handleOAuthCallback(
               : "⏱️ Events checked every 5 minutes";
 
           if (subResult.suggestInstall && subResult.installUrl) {
-            const adminHint = subResult.isAdmin
-              ? "Install the GitHub App for real-time delivery:"
-              : "Ask an admin to install the GitHub App:";
-            deliveryInfo += `\n\n💡 ${adminHint}\n[Install](<${subResult.installUrl}>)`;
+            deliveryInfo += `\n\n💡 Install the GitHub App for real-time delivery:\n[Install](<${subResult.installUrl}>)`;
           }
 
           await bot.sendMessage(
