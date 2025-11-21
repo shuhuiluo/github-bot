@@ -52,15 +52,11 @@ export class InstallationService {
     // Store installation in database
     await this.insertInstallation(installation, accountLogin, accountType);
 
-    // Store repositories in normalized table
+    // Store repositories in normalized table and upgrade subscriptions
     if (repositories) {
       for (const repo of repositories) {
         if (!repo.full_name) continue;
-        await db.insert(installationRepositories).values({
-          installationId: installation.id,
-          repoFullName: repo.full_name,
-          addedAt: new Date(),
-        });
+        await this.addRepoAndUpgrade(repo.full_name, installation.id);
       }
     }
   }
@@ -101,37 +97,7 @@ export class InstallationService {
     // Add new repositories to normalized table and upgrade subscriptions
     for (const repo of repositories_added) {
       if (!repo.full_name) continue;
-
-      // Add repository to installation
-      await db
-        .insert(installationRepositories)
-        .values({
-          installationId: installation.id,
-          repoFullName: repo.full_name,
-          addedAt: new Date(),
-        })
-        .onConflictDoNothing();
-
-      // Upgrade existing polling subscriptions to webhook mode
-      if (this.subscriptionService) {
-        try {
-          const upgraded = await this.subscriptionService.upgradeToWebhook(
-            repo.full_name,
-            installation.id
-          );
-          if (upgraded > 0) {
-            console.log(
-              `Upgraded ${upgraded} subscription(s) for ${repo.full_name} to webhook delivery`
-            );
-          }
-        } catch (error) {
-          console.error(
-            `Failed to upgrade subscriptions for ${repo.full_name} (installation ${installation.id}):`,
-            error
-          );
-          // Continue processing other repos
-        }
-      }
+      await this.addRepoAndUpgrade(repo.full_name, installation.id);
     }
   }
 
@@ -178,6 +144,42 @@ export class InstallationService {
         error
       );
       return null;
+    }
+  }
+
+  /**
+   * Add a repository to installation and upgrade any polling subscriptions
+   */
+  private async addRepoAndUpgrade(
+    repoFullName: string,
+    installationId: number
+  ): Promise<void> {
+    await db
+      .insert(installationRepositories)
+      .values({
+        installationId,
+        repoFullName,
+        addedAt: new Date(),
+      })
+      .onConflictDoNothing();
+
+    if (!this.subscriptionService) return;
+
+    try {
+      const upgraded = await this.subscriptionService.upgradeToWebhook(
+        repoFullName,
+        installationId
+      );
+      if (upgraded > 0) {
+        console.log(
+          `Upgraded ${upgraded} subscription(s) for ${repoFullName} to webhook delivery`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Failed to upgrade subscriptions for ${repoFullName}:`,
+        error
+      );
     }
   }
 
