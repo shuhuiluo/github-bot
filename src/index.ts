@@ -179,7 +179,13 @@ const app = new Hono();
 app.use(logger());
 
 // Serve static assets (OAuth page logos, etc.)
-app.use("/assets/*", serveStatic({ root: "./" }));
+app.use(
+  "/assets/*",
+  serveStatic({
+    root: "./assets",
+    rewriteRequestPath: path => path.replace(/^\/assets/, ""),
+  })
+);
 
 // Towns webhook endpoint
 app.post("/webhook", jwtMiddleware, handler);
