@@ -1,15 +1,10 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import type { Context } from "hono";
 
 import type { SubscribeResult } from "../services/subscription-service";
 import { escapeHtml } from "../utils/html-escape";
 
-// Load Towns logo as base64 data URI
-const TOWNS_LOGO = `data:image/png;base64,${readFileSync(
-  join(__dirname, "../../assets/Towns rainbow.png")
-).toString("base64")}`;
+// Towns logo served as static asset
+const TOWNS_LOGO = "/assets/Towns-rainbow.png";
 
 /**
  * Render success page after OAuth completion - Main dispatcher
