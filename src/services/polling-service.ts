@@ -5,6 +5,7 @@ import {
   getPullRequest,
   type GitHubPullRequest,
 } from "../api/github-client";
+import type { EventType } from "../constants";
 import { db } from "../db";
 import { repoPollingState } from "../db/schema";
 import { formatEvent } from "../formatters/events-api";
@@ -16,7 +17,7 @@ import type { SubscriptionService } from "./subscription-service";
  * Map short event type names to GitHub event types
  * Values can be comma-separated to map one short name to multiple event types
  */
-const EVENT_TYPE_MAP: Record<string, string> = {
+const EVENT_TYPE_MAP: Record<EventType, string> = {
   pr: "PullRequestEvent",
   issues: "IssuesEvent",
   commits: "PushEvent",
@@ -29,32 +30,6 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   stars: "WatchEvent",
   forks: "ForkEvent",
 };
-
-/**
- * Check if an event matches the subscription's event type filter
- * @param eventType - GitHub event type (e.g., "PullRequestEvent") or null
- * @param subscriptionTypes - Comma-separated event types (e.g., "pr,issues") or "all" or null
- */
-function isEventTypeMatch(
-  eventType: string | null,
-  subscriptionTypes: string | null | undefined
-): boolean {
-  // Treat null event type or null/undefined/"all" subscription as match
-  if (!eventType || !subscriptionTypes || subscriptionTypes === "all")
-    return true;
-
-  const subscribedTypes = subscriptionTypes.split(",").map(t => t.trim());
-
-  // Check if the event type matches any of the subscribed short names
-  for (const shortName of subscribedTypes) {
-    const mappedTypes = EVENT_TYPE_MAP[shortName]?.split(",") ?? [];
-    if (mappedTypes.includes(eventType)) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 /**
  * Polling service that checks GitHub repositories for new events
@@ -268,10 +243,10 @@ export class PollingService {
         if (
           event.type === "PullRequestEvent" &&
           event.payload &&
-          typeof event.payload === "object" &&
-          "number" in event.payload
+          "number" in event.payload &&
+          typeof event.payload.number === "number"
         ) {
-          prNumbers.add(event.payload.number as number);
+          prNumbers.add(event.payload.number);
         }
       }
 
@@ -317,24 +292,18 @@ export class PollingService {
           if (channelsForEvent.length === 0) continue;
 
           // Send to filtered channels in parallel
-          // Use Promise.allSettled to attempt all channels independently
-          const sendPromises = channelsForEvent.map(({ channelId }) =>
-            this.bot.sendMessage(channelId, message).then(
-              () => ({ status: "fulfilled" as const, channelId }),
-              error => ({ status: "rejected" as const, channelId, error })
+          const results = await Promise.allSettled(
+            channelsForEvent.map(({ channelId }) =>
+              this.bot.sendMessage(channelId, message)
             )
           );
 
-          const results = await Promise.allSettled(sendPromises);
-
-          // Log failures for each channel
-          results.forEach(result => {
+          // Log failures
+          results.forEach((result, index) => {
             if (result.status === "rejected") {
-              console.error(`Failed to send event to channel:`, result.reason);
-            } else if (result.value.status === "rejected") {
               console.error(
-                `Failed to send event to channel ${result.value.channelId}:`,
-                result.value.error
+                `Failed to send event to ${channelsForEvent[index].channelId}:`,
+                result.reason
               );
             }
           });
@@ -355,4 +324,31 @@ export class PollingService {
       });
     }
   }
+}
+
+/**
+ * Check if an event matches the subscription's event type filter
+ * @param eventType - GitHub event type (e.g., "PullRequestEvent") or null
+ * @param subscriptionTypes - Comma-separated event types (e.g., "pr,issues") or "all" or null
+ */
+function isEventTypeMatch(
+  eventType: string | null,
+  subscriptionTypes: string | null | undefined
+): boolean {
+  // Treat null event type or null/undefined/"all" subscription as match
+  if (!eventType || !subscriptionTypes || subscriptionTypes === "all")
+    return true;
+
+  const subscribedTypes = subscriptionTypes.split(",").map(t => t.trim());
+
+  // Check if the event type matches any of the subscribed short names
+  for (const shortName of subscribedTypes) {
+    const mappedTypes =
+      EVENT_TYPE_MAP[shortName as EventType]?.split(",") ?? [];
+    if (mappedTypes.includes(eventType)) {
+      return true;
+    }
+  }
+
+  return false;
 }

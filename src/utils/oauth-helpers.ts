@@ -23,8 +23,7 @@ export async function sendOAuthPrompt(
       "🔐 **GitHub Account Required**\n\n" +
         "This repository requires authentication.\n\n" +
         `[Connect GitHub Account](${authUrl})\n\n` +
-        "Run the command again after connecting.",
-      { ephemeral: true }
+        "Run the command again after connecting."
     );
   } catch (error) {
     console.error("Failed to send OAuth prompt:", {
