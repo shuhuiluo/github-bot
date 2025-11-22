@@ -74,6 +74,9 @@ export class SubscriptionService {
     const { townsUserId, spaceId, channelId, repoIdentifier, eventTypes } =
       params;
 
+    // Normalize event types once to avoid duplication
+    const requestedEventTypes = eventTypes || DEFAULT_EVENT_TYPES;
+
     // Parse owner/repo
     const [owner, repo] = repoIdentifier.split("/");
     if (!owner || !repo) {
@@ -129,7 +132,7 @@ export class SubscriptionService {
           requiresInstallation: true,
           installUrl: this.generateInstallUrl(repoInfo.owner.id),
           repoFullName: repoInfo.fullName,
-          eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+          eventTypes: requestedEventTypes,
           error: `Private repository requires GitHub App installation`,
         };
       }
@@ -173,7 +176,7 @@ export class SubscriptionService {
       createdByGithubLogin: githubUser.login,
       installationId,
       enabled: true,
-      eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+      eventTypes: requestedEventTypes,
       createdAt: now,
       updatedAt: now,
     });
@@ -183,7 +186,7 @@ export class SubscriptionService {
         success: true,
         deliveryMode: "polling",
         repoFullName: repoInfo.fullName,
-        eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+        eventTypes: requestedEventTypes,
         installUrl: this.generateInstallUrl(repoInfo.owner.id),
       };
     } else {
@@ -191,7 +194,7 @@ export class SubscriptionService {
         success: true,
         deliveryMode: "webhook",
         repoFullName: repoInfo.fullName,
-        eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+        eventTypes: requestedEventTypes,
       };
     }
   }

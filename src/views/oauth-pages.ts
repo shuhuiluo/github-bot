@@ -177,7 +177,7 @@ function renderPollingSuccess(c: Context, sub: SubscribeResult) {
             if (countdownEl) countdownEl.textContent = String(countdown);
             if (countdown === 0) {
               clearInterval(interval);
-              window.location.href = ${JSON.stringify(sub.installUrl || "")};
+              window.location.href = ${JSON.stringify(sub.installUrl)};
             }
           }, 1000);
         </script>
