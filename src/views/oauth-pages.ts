@@ -1,7 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import type { Context } from "hono";
 
 import type { SubscribeResult } from "../services/subscription-service";
 import { escapeHtml } from "../utils/html-escape";
+
+// Load Towns logo as base64 data URI
+const TOWNS_LOGO = `data:image/png;base64,${readFileSync(
+  join(__dirname, "../../assets/Towns rainbow.png")
+).toString("base64")}`;
 
 /**
  * Render success page after OAuth completion - Main dispatcher
@@ -49,6 +57,9 @@ function renderOAuthOnlySuccess(c: Context) {
       </head>
       <body>
         <div class="container">
+          <div class="logo-header">
+            <img src="${TOWNS_LOGO}" alt="Towns Protocol" class="logo" />
+          </div>
           <h1>✅ Success!</h1>
           <p>Your GitHub account has been connected.</p>
           <p>You can close this window and return to Towns.</p>
@@ -79,16 +90,19 @@ function renderInstallRequired(
       </head>
       <body>
         <div class="container">
+          <div class="logo-header">
+            <img src="${TOWNS_LOGO}" alt="Towns Protocol" class="logo" />
+          </div>
           <h1>⚠️ GitHub App Installation Required</h1>
           <p class="repo-name">Repository: <strong>${safeRepo}</strong></p>
           <p>This private repository requires the GitHub App to be installed.</p>
           <p>Click the button below to install the app and enable subscription.</p>
           <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
           <p class="note">After installation, return to Towns and run <code>/github subscribe ${safeRepo}</code> again.</p>
-          <p class="redirect-info">Redirecting in <span id="countdown">2</span> seconds...</p>
+          <p class="redirect-info">Redirecting in <span id="countdown">3</span> seconds...</p>
         </div>
         <script>
-          let countdown = 2;
+          let countdown = 3;
           const countdownEl = document.getElementById('countdown');
           const interval = setInterval(() => {
             countdown--;
@@ -125,6 +139,9 @@ function renderWebhookSuccess(
       </head>
       <body>
         <div class="container">
+          <div class="logo-header">
+            <img src="${TOWNS_LOGO}" alt="Towns Protocol" class="logo" />
+          </div>
           <h1>✅ Subscribed to ${safeRepo}!</h1>
           <p class="delivery-mode">⚡ Real-time webhook delivery enabled</p>
           <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
@@ -158,6 +175,9 @@ function renderPollingSuccess(
       </head>
       <body>
         <div class="container">
+          <div class="logo-header">
+            <img src="${TOWNS_LOGO}" alt="Towns Protocol" class="logo" />
+          </div>
           <h1>✅ Subscribed to ${safeRepo}!</h1>
           <p class="delivery-mode">⏱️ Currently using 5-minute polling</p>
           <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
@@ -206,6 +226,9 @@ function renderSubscriptionError(
       </head>
       <body>
         <div class="container">
+          <div class="logo-header">
+            <img src="${TOWNS_LOGO}" alt="Towns Protocol" class="logo" />
+          </div>
           <h1>❌ Subscription Failed</h1>
           <p>${safeError}</p>
           <p>Please return to Towns and try again.</p>
@@ -242,6 +265,18 @@ function renderStyles() {
         max-width: 600px;
         width: 100%;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+      .logo-header {
+        text-align: center;
+        margin-bottom: 24px;
+        padding-bottom: 24px;
+        border-bottom: 2px solid #e2e8f0;
+      }
+      .logo {
+        width: 80px;
+        height: 80px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
       }
       h1 {
         color: #1a202c;
