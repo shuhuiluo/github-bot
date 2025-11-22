@@ -4,6 +4,8 @@
  */
 
 import type {
+  CreatePayload,
+  DeletePayload,
   ForkPayload,
   IssueCommentPayload,
   IssuesPayload,
@@ -201,4 +203,28 @@ export function formatWatch(payload: WatchPayload): string {
   }
 
   return "";
+}
+
+export function formatCreate(payload: CreatePayload): string {
+  const { ref, ref_type, repository } = payload;
+  const refValue = ref || "unknown";
+  const refTypeValue = ref_type || "branch";
+
+  return (
+    `🌿 **Created ${refTypeValue}** in ${repository.full_name}\n` +
+    `\`${refValue}\`\n` +
+    `${repository.html_url}`
+  );
+}
+
+export function formatDelete(payload: DeletePayload): string {
+  const { ref, ref_type, repository } = payload;
+  const refValue = ref || "unknown";
+  const refTypeValue = ref_type || "branch";
+
+  return (
+    `🗑️ **Deleted ${refTypeValue}** in ${repository.full_name}\n` +
+    `\`${refValue}\`\n` +
+    `${repository.html_url}`
+  );
 }

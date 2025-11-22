@@ -1,4 +1,7 @@
+import { EventType } from "../constants";
 import {
+  formatCreate,
+  formatDelete,
   formatFork,
   formatIssue,
   formatIssueComment,
@@ -40,33 +43,37 @@ export class EventProcessor {
   }
 
   /**
-   * Process a pull request webhook event
+   * Generic helper to process GitHub webhook events
+   * Handles channel filtering, message formatting, and distribution
    */
-  async onPullRequest(event: PullRequestPayload) {
-    const { pull_request, repository } = event;
-
-    console.log(
-      `Processing PR event: ${event.action} - ${repository.full_name}#${pull_request.number}`
-    );
+  private async processEvent<T extends { repository: { full_name: string } }>(
+    event: T,
+    eventType: EventType,
+    formatter: (event: T) => string,
+    logContext?: string
+  ) {
+    if (logContext) {
+      console.log(`Processing ${logContext}`);
+    }
 
     // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
+      event.repository.full_name,
       "webhook"
     );
 
-    // Filter by event preferences (pr event type)
+    // Filter by event preferences
     const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("pr")
+      ch.eventTypes.includes(eventType)
     );
 
     if (interestedChannels.length === 0) {
-      console.log("No interested channels for PR event");
+      console.log(`No interested channels for ${eventType} event`);
       return;
     }
 
-    // Format message using existing formatter
-    const message = formatPullRequest(event);
+    // Format message
+    const message = formatter(event);
 
     if (!message) {
       console.log(
@@ -76,12 +83,33 @@ export class EventProcessor {
     }
 
     // Send to all interested channels in parallel
-    await Promise.all(
+    const results = await Promise.allSettled(
       interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
+        this.bot.sendMessage(channel.channelId, message)
       )
+    );
+
+    // Log failures
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        console.error(
+          `Failed to send to ${interestedChannels[index].channelId}:`,
+          result.reason
+        );
+      }
+    });
+  }
+
+  /**
+   * Process a pull request webhook event
+   */
+  async onPullRequest(event: PullRequestPayload) {
+    const { pull_request, repository } = event;
+    await this.processEvent(
+      event,
+      "pr",
+      formatPullRequest,
+      `PR event: ${event.action} - ${repository.full_name}#${pull_request.number}`
     );
   }
 
@@ -90,42 +118,11 @@ export class EventProcessor {
    */
   async onPush(event: PushPayload) {
     const { repository, ref, commits } = event;
-
-    console.log(
-      `Processing push event: ${repository.full_name} - ${ref} (${commits?.length || 0} commits)`
-    );
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (commits event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("commits")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for push event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatPush(event);
-
-    if (!message) {
-      console.log("Formatter returned empty message (no commits)");
-      return;
-    }
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "commits",
+      formatPush,
+      `push event: ${repository.full_name} - ${ref} (${commits?.length || 0} commits)`
     );
   }
 
@@ -134,44 +131,11 @@ export class EventProcessor {
    */
   async onIssues(event: IssuesPayload) {
     const { issue, repository } = event;
-
-    console.log(
-      `Processing issue event: ${event.action} - ${repository.full_name}#${issue.number}`
-    );
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (issues event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("issues")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for issue event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatIssue(event);
-
-    if (!message) {
-      console.log(
-        "Formatter returned empty message (event action not handled)"
-      );
-      return;
-    }
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "issues",
+      formatIssue,
+      `issue event: ${event.action} - ${repository.full_name}#${issue.number}`
     );
   }
 
@@ -180,44 +144,11 @@ export class EventProcessor {
    */
   async onRelease(event: ReleasePayload) {
     const { release, repository } = event;
-
-    console.log(
-      `Processing release event: ${event.action} - ${repository.full_name} ${release.tag_name}`
-    );
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (releases event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("releases")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for release event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatRelease(event);
-
-    if (!message) {
-      console.log(
-        "Formatter returned empty message (event action not handled)"
-      );
-      return;
-    }
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "releases",
+      formatRelease,
+      `release event: ${event.action} - ${repository.full_name} ${release.tag_name}`
     );
   }
 
@@ -226,44 +157,11 @@ export class EventProcessor {
    */
   async onWorkflowRun(event: WorkflowRunPayload) {
     const { workflow_run, repository } = event;
-
-    console.log(
-      `Processing workflow run event: ${event.action} - ${repository.full_name} ${workflow_run.name}`
-    );
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (ci event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("ci")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for workflow run event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatWorkflowRun(event);
-
-    if (!message) {
-      console.log(
-        "Formatter returned empty message (event action not handled)"
-      );
-      return;
-    }
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "ci",
+      formatWorkflowRun,
+      `workflow run event: ${event.action} - ${repository.full_name} ${workflow_run.name}`
     );
   }
 
@@ -272,44 +170,11 @@ export class EventProcessor {
    */
   async onIssueComment(event: IssueCommentPayload) {
     const { issue, repository } = event;
-
-    console.log(
-      `Processing issue comment event: ${event.action} - ${repository.full_name}#${issue.number}`
-    );
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (comments event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("comments")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for comment event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatIssueComment(event);
-
-    if (!message) {
-      console.log(
-        "Formatter returned empty message (event action not handled)"
-      );
-      return;
-    }
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "comments",
+      formatIssueComment,
+      `issue comment event: ${event.action} - ${repository.full_name}#${issue.number}`
     );
   }
 
@@ -318,44 +183,11 @@ export class EventProcessor {
    */
   async onPullRequestReview(event: PullRequestReviewPayload) {
     const { pull_request, repository } = event;
-
-    console.log(
-      `Processing PR review event: ${event.action} - ${repository.full_name}#${pull_request.number}`
-    );
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (reviews event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("reviews")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for PR review event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatPullRequestReview(event);
-
-    if (!message) {
-      console.log(
-        "Formatter returned empty message (event action not handled)"
-      );
-      return;
-    }
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "reviews",
+      formatPullRequestReview,
+      `PR review event: ${event.action} - ${repository.full_name}#${pull_request.number}`
     );
   }
 
@@ -366,44 +198,16 @@ export class EventProcessor {
     event: CreatePayload | DeletePayload,
     eventType: "create" | "delete"
   ) {
-    const { repository } = event;
+    const formatter = (e: CreatePayload | DeletePayload) =>
+      eventType === "create"
+        ? formatCreate(e as CreatePayload)
+        : formatDelete(e as DeletePayload);
 
-    console.log(`Processing ${eventType} event: ${repository.full_name}`);
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (branches event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("branches")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for branch event");
-      return;
-    }
-
-    // Format message
-    const ref = "ref" in event ? String(event.ref) : "unknown";
-    const refType = "ref_type" in event ? String(event.ref_type) : "branch";
-    const emoji = eventType === "create" ? "🌿" : "🗑️";
-    const action = eventType === "create" ? "Created" : "Deleted";
-
-    const message =
-      `${emoji} **${action} ${refType}** in ${repository.full_name}\n` +
-      `\`${ref}\`\n` +
-      `${repository.html_url}`;
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "branches",
+      formatter,
+      `${eventType} event: ${event.repository.full_name}`
     );
   }
 
@@ -411,36 +215,11 @@ export class EventProcessor {
    * Process fork webhook event
    */
   async onFork(event: ForkPayload) {
-    const { repository } = event;
-
-    console.log(`Processing fork event: ${repository.full_name}`);
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (forks event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("forks")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for fork event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatFork(event);
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "forks",
+      formatFork,
+      `fork event: ${event.repository.full_name}`
     );
   }
 
@@ -448,43 +227,11 @@ export class EventProcessor {
    * Process watch webhook event (star)
    */
   async onWatch(event: WatchPayload) {
-    const { repository } = event;
-
-    console.log(`Processing watch event: ${repository.full_name}`);
-
-    // Get subscribed channels for this repo (webhook mode only)
-    const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name,
-      "webhook"
-    );
-
-    // Filter by event preferences (stars event type)
-    const interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes("stars")
-    );
-
-    if (interestedChannels.length === 0) {
-      console.log("No interested channels for watch event");
-      return;
-    }
-
-    // Format message using existing formatter
-    const message = formatWatch(event);
-
-    if (!message) {
-      console.log(
-        "Formatter returned empty message (event action not handled)"
-      );
-      return;
-    }
-
-    // Send to all interested channels in parallel
-    await Promise.all(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message).catch((err: Error) => {
-          console.error(`Failed to send to ${channel.channelId}:`, err.message);
-        })
-      )
+    await this.processEvent(
+      event,
+      "stars",
+      formatWatch,
+      `watch event: ${event.repository.full_name}`
     );
   }
 }

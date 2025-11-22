@@ -22,6 +22,11 @@ export const ALLOWED_EVENT_TYPES = [
 ] as const;
 
 /**
+ * Event type union extracted from ALLOWED_EVENT_TYPES
+ */
+export type EventType = (typeof ALLOWED_EVENT_TYPES)[number];
+
+/**
  * Pending message cleanup interval (30 seconds)
  * How often to check for and remove stale pending messages
  */
