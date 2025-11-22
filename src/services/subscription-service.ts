@@ -19,20 +19,35 @@ export interface SubscribeParams {
 }
 
 /**
- * Subscription result
+ * Subscription result - discriminated union for type safety
  */
-export interface SubscribeResult {
-  success: boolean;
-  requiresOAuth?: boolean;
-  requiresInstallation?: boolean;
-  authUrl?: string;
-  installUrl?: string;
-  repoFullName?: string;
-  deliveryMode?: "webhook" | "polling";
-  suggestInstall?: boolean;
-  eventTypes?: string;
-  error?: string;
-}
+export type SubscribeResult = SubscribeSuccess | SubscribeFailure;
+
+type SubscribeSuccess =
+  | {
+      success: true;
+      deliveryMode: "webhook";
+      repoFullName: string;
+      eventTypes: string;
+    }
+  | {
+      success: true;
+      deliveryMode: "polling";
+      repoFullName: string;
+      eventTypes: string;
+      installUrl: string;
+    };
+
+type SubscribeFailure =
+  | { success: false; requiresInstallation: false; error: string }
+  | {
+      success: false;
+      requiresInstallation: true;
+      installUrl: string;
+      repoFullName: string;
+      eventTypes: string;
+      error: string;
+    };
 
 /**
  * SubscriptionService - OAuth-first subscription management
@@ -64,6 +79,7 @@ export class SubscriptionService {
     if (!owner || !repo) {
       return {
         success: false,
+        requiresInstallation: false,
         error: `Invalid repository format. Use: owner/repo`,
       };
     }
@@ -94,27 +110,24 @@ export class SubscriptionService {
           : `Failed to validate repository: ${repoIdentifier}`;
       return {
         success: false,
+        requiresInstallation: false,
         error: errorMessage,
       };
     }
 
     // 3. Determine delivery mode
     let deliveryMode: "webhook" | "polling";
-    let installationId: number | null = null;
-    let suggestInstall = false;
+    const installationId = await this.installationService.isRepoInstalled(
+      repoInfo.fullName
+    );
 
     if (repoInfo.isPrivate) {
       // Private repos MUST have GitHub App installed
-      installationId = await this.installationService.isRepoInstalled(
-        repoInfo.fullName
-      );
-
       if (!installationId) {
-        const installUrl = this.generateInstallUrl(repoInfo.owner.id);
         return {
           success: false,
           requiresInstallation: true,
-          installUrl,
+          installUrl: this.generateInstallUrl(repoInfo.owner.id),
           repoFullName: repoInfo.fullName,
           eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
           error: `Private repository requires GitHub App installation`,
@@ -124,16 +137,7 @@ export class SubscriptionService {
       deliveryMode = "webhook";
     } else {
       // Public repos: webhook if available, polling fallback
-      installationId = await this.installationService.isRepoInstalled(
-        repoInfo.fullName
-      );
-
-      if (installationId) {
-        deliveryMode = "webhook";
-      } else {
-        deliveryMode = "polling";
-        suggestInstall = true;
-      }
+      deliveryMode = installationId ? "webhook" : "polling";
     }
 
     // 4. Check if already subscribed
@@ -152,6 +156,7 @@ export class SubscriptionService {
     if (existing.length > 0) {
       return {
         success: false,
+        requiresInstallation: false,
         error: `Already subscribed to ${repoInfo.fullName}`,
       };
     }
@@ -173,16 +178,22 @@ export class SubscriptionService {
       updatedAt: now,
     });
 
-    return {
-      success: true,
-      repoFullName: repoInfo.fullName,
-      deliveryMode,
-      suggestInstall,
-      eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
-      installUrl: suggestInstall
-        ? this.generateInstallUrl(repoInfo.owner.id)
-        : undefined,
-    };
+    if (deliveryMode === "polling") {
+      return {
+        success: true,
+        deliveryMode: "polling",
+        repoFullName: repoInfo.fullName,
+        eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+        installUrl: this.generateInstallUrl(repoInfo.owner.id),
+      };
+    } else {
+      return {
+        success: true,
+        deliveryMode: "webhook",
+        repoFullName: repoInfo.fullName,
+        eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+      };
+    }
   }
 
   /**

@@ -1,21 +1,7 @@
 import type { Context } from "hono";
 
-import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
+import type { SubscribeResult } from "../services/subscription-service";
 import { escapeHtml } from "../utils/html-escape";
-
-/**
- * Subscription result data for rendering
- */
-interface SubscriptionData {
-  success: boolean;
-  requiresInstallation?: boolean;
-  repoFullName?: string;
-  deliveryMode?: "webhook" | "polling";
-  suggestInstall?: boolean;
-  installUrl?: string;
-  eventTypes?: string;
-  error?: string;
-}
 
 /**
  * Render success page after OAuth completion - Main dispatcher
@@ -24,7 +10,7 @@ export function renderSuccess(
   c: Context,
   data?: {
     action?: string;
-    subscriptionResult?: SubscriptionData;
+    subscriptionResult?: SubscribeResult;
   }
 ) {
   if (!data?.subscriptionResult) {
@@ -33,7 +19,7 @@ export function renderSuccess(
 
   const sub = data.subscriptionResult;
 
-  if (sub.requiresInstallation && sub.installUrl) {
+  if (!sub.success && sub.requiresInstallation) {
     return renderInstallRequired(c, sub);
   }
 
@@ -41,7 +27,7 @@ export function renderSuccess(
     return renderWebhookSuccess(c, sub);
   }
 
-  if (sub.success && sub.deliveryMode === "polling" && sub.suggestInstall) {
+  if (sub.success && sub.deliveryMode === "polling") {
     return renderPollingSuccess(c, sub);
   }
 
@@ -75,11 +61,13 @@ function renderOAuthOnlySuccess(c: Context) {
 /**
  * Private repo requiring GitHub App installation
  */
-function renderInstallRequired(c: Context, sub: SubscriptionData) {
-  const safeRepo = escapeHtml(sub.repoFullName || "this repository");
-  const safeInstallUrl = escapeHtml(sub.installUrl!);
+function renderInstallRequired(c: Context, sub: SubscribeResult) {
+  // Caller ensures this is the requiresInstallation variant
+  if (!sub.success && sub.requiresInstallation) {
+    const safeRepo = escapeHtml(sub.repoFullName);
+    const safeInstallUrl = escapeHtml(sub.installUrl);
 
-  return c.html(`
+    return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -112,17 +100,21 @@ function renderInstallRequired(c: Context, sub: SubscriptionData) {
         </script>
       </body>
     </html>
-  `);
+    `);
+  }
+  // Fallback (should never reach here due to caller's type narrowing)
+  return c.html("<html><body>Error</body></html>");
 }
 
 /**
  * Subscription success with webhook delivery
  */
-function renderWebhookSuccess(c: Context, sub: SubscriptionData) {
-  const safeRepo = escapeHtml(sub.repoFullName || "repository");
-  const safeEvents = escapeHtml(sub.eventTypes || DEFAULT_EVENT_TYPES);
+function renderWebhookSuccess(c: Context, sub: SubscribeResult) {
+  if (sub.success && sub.deliveryMode === "webhook") {
+    const safeRepo = escapeHtml(sub.repoFullName);
+    const safeEvents = escapeHtml(sub.eventTypes);
 
-  return c.html(`
+    return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -141,18 +133,21 @@ function renderWebhookSuccess(c: Context, sub: SubscriptionData) {
       </body>
     </html>
   `);
+  }
+  return c.html("<html><body>Error</body></html>");
 }
 
 /**
  * Subscription success with polling delivery (public repo without app)
  */
-function renderPollingSuccess(c: Context, sub: SubscriptionData) {
-  const safeRepo = escapeHtml(sub.repoFullName || "repository");
-  const safeEvents = escapeHtml(sub.eventTypes || DEFAULT_EVENT_TYPES);
-  const safeInstallUrl = escapeHtml(sub.installUrl || "");
-  const installMessage = "Install the GitHub App for real-time delivery:";
+function renderPollingSuccess(c: Context, sub: SubscribeResult) {
+  if (sub.success && sub.deliveryMode === "polling") {
+    const safeRepo = escapeHtml(sub.repoFullName);
+    const safeEvents = escapeHtml(sub.eventTypes);
+    const safeInstallUrl = escapeHtml(sub.installUrl);
+    const installMessage = "Install the GitHub App for real-time delivery:";
 
-  return c.html(`
+    return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -189,17 +184,18 @@ function renderPollingSuccess(c: Context, sub: SubscriptionData) {
       </body>
     </html>
   `);
+  }
+  return c.html("<html><body>Error</body></html>");
 }
 
 /**
  * Subscription error page
  */
-function renderSubscriptionError(c: Context, sub: SubscriptionData) {
-  const safeError = escapeHtml(
-    sub.error || "An error occurred during subscription"
-  );
+function renderSubscriptionError(c: Context, sub: SubscribeResult) {
+  if (!sub.success) {
+    const safeError = escapeHtml(sub.error);
 
-  return c.html(`
+    return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -217,6 +213,8 @@ function renderSubscriptionError(c: Context, sub: SubscriptionData) {
       </body>
     </html>
   `);
+  }
+  return c.html("<html><body>Error</body></html>");
 }
 
 /**

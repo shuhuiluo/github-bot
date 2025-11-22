@@ -52,16 +52,12 @@ export async function handleOAuthCallback(
           eventTypes: data.eventTypes || DEFAULT_EVENT_TYPES,
         });
 
-        if (subResult.success && subResult.repoFullName) {
+        if (subResult.success) {
           // Success - notify in Towns
-          let deliveryInfo =
+          const deliveryInfo =
             subResult.deliveryMode === "webhook"
               ? "⚡ Real-time webhook delivery enabled!"
-              : "⏱️ Events checked every 5 minutes";
-
-          if (subResult.suggestInstall && subResult.installUrl) {
-            deliveryInfo += `\n\n💡 Install the GitHub App for real-time delivery:\n[Install](<${subResult.installUrl}>)`;
-          }
+              : `⏱️ Events checked every 5 minutes\n\n💡 Install the GitHub App for real-time delivery:\n[Install](<${subResult.installUrl}>)`;
 
           await bot.sendMessage(
             result.channelId,
@@ -73,7 +69,7 @@ export async function handleOAuthCallback(
             action: "subscribe",
             subscriptionResult: subResult,
           });
-        } else if (subResult.requiresInstallation && subResult.installUrl) {
+        } else if (!subResult.success && subResult.requiresInstallation) {
           // Private repo - show installation page (no Towns message)
           return renderSuccess(c, {
             action: "subscribe",
@@ -81,10 +77,7 @@ export async function handleOAuthCallback(
           });
         } else {
           // Other error - notify in Towns
-          await bot.sendMessage(
-            result.channelId,
-            `❌ ${subResult.error || "Failed to subscribe to repository"}`
-          );
+          await bot.sendMessage(result.channelId, `❌ ${subResult.error}`);
 
           return renderSuccess(c, {
             action: "subscribe",

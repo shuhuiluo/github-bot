@@ -129,23 +129,20 @@ async function handleSubscribe(
   });
 
   // Handle installation requirement (private repos)
-  if (result.requiresInstallation && result.installUrl) {
+  if (!result.success && result.requiresInstallation) {
     await handler.sendMessage(
       channelId,
       `🔒 **GitHub App Installation Required**\n\n` +
         `This private repository requires the GitHub App to be installed.\n\n` +
-        `${result.error || "Install the app to subscribe to this repository."}\n\n` +
+        `${result.error}\n\n` +
         `[Install GitHub App](${result.installUrl})`
     );
     return;
   }
 
-  // Handle error
+  // Handle other errors
   if (!result.success) {
-    await handler.sendMessage(
-      channelId,
-      `❌ ${result.error || "Subscription failed"}`
-    );
+    await handler.sendMessage(channelId, `❌ ${result.error}`);
     return;
   }
 
@@ -156,14 +153,11 @@ async function handleSubscribe(
   if (result.deliveryMode === "webhook") {
     deliveryInfo = "⚡ Real-time webhook delivery enabled!";
   } else {
-    deliveryInfo = "⏱️ Events are checked every 5 minutes (polling mode)";
-
     // Add installation suggestion for public repos
-    if (result.suggestInstall && result.installUrl) {
-      deliveryInfo +=
-        `\n\n💡 **Want real-time notifications?** Install the GitHub App:\n` +
-        `   [Install GitHub App](${result.installUrl})`;
-    }
+    deliveryInfo =
+      "⏱️ Events are checked every 5 minutes (polling mode)\n\n" +
+      `💡 **Want real-time notifications?** Install the GitHub App:\n` +
+      `   [Install GitHub App](${result.installUrl})`;
   }
 
   await handler.sendMessage(
