@@ -163,7 +163,7 @@ function renderPollingSuccess(
           <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
           <div class="install-section">
             <p>💡 <strong>Want real-time updates?</strong></p>
-            <p>${escapeHtml(installMessage)}</p>
+            <p>${installMessage}</p>
             <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
             <p class="redirect-info">Auto-redirecting to installation in <span id="countdown">5</span> seconds...</p>
             <p class="note">You can close this window and return to Towns.</p>
