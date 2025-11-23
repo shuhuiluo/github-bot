@@ -43,12 +43,23 @@ export enum TokenStatus {
 }
 
 /**
- * GitHubOAuthService - Manages OAuth authentication for Towns users
+ * GitHubOAuthService - Manages GitHub App user authentication for Towns users
+ *
+ * GitHub App User Access Token:
+ * - Identifies the GitHub user
+ * - Validates user's repository access
+ * - Permissions inherited from GitHub App installation (not OAuth scopes)
+ * - Does NOT read repository contents or receive webhook events
+ *
+ * GitHub App Installation Token:
+ * - Reads repository contents and metadata
+ * - Receives webhook events for subscribed repositories
+ * - Handles private repository event delivery
  *
  * Uses Octokit app's built-in OAuth support (app.oauth) to:
  * - Generate authorization URLs
- * - Exchange codes for tokens
- * - Get user-scoped Octokit instances
+ * - Exchange codes for user access tokens
+ * - Get user-authenticated Octokit instances
  *
  * Tokens are encrypted at rest using AES-256-GCM derived from JWT_SECRET.
  */
@@ -191,10 +202,6 @@ export class GitHubOAuthService {
         githubLogin: user.login,
         accessToken: encryptedToken,
         tokenType: authentication.tokenType,
-        scope:
-          "scopes" in authentication && Array.isArray(authentication.scopes)
-            ? authentication.scopes.join(",")
-            : null,
         expiresAt: authentication.expiresAt
           ? new Date(authentication.expiresAt)
           : null,
@@ -212,10 +219,6 @@ export class GitHubOAuthService {
           githubLogin: user.login,
           accessToken: encryptedToken,
           tokenType: authentication.tokenType,
-          scope:
-            "scopes" in authentication && Array.isArray(authentication.scopes)
-              ? authentication.scopes.join(",")
-              : null,
           expiresAt: authentication.expiresAt
             ? new Date(authentication.expiresAt)
             : null,
@@ -359,10 +362,10 @@ export class GitHubOAuthService {
       }
 
       if (status === 403) {
-        // Could be insufficient scope, rate limit, or account lockout
+        // Could be insufficient permissions, rate limit, or account lockout
         // Don't delete token - let user retry or reconnect
         console.warn(
-          `GitHub returned 403 for ${townsUserId} - insufficient scope, rate limit, or lockout`
+          `GitHub returned 403 for ${townsUserId} - insufficient permissions, rate limit, or lockout`
         );
         return TokenStatus.Unknown;
       }

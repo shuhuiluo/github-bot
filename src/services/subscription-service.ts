@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import {
+  getOwnerIdFromUsername,
   getUserProfile,
   validateRepository,
   type RepositoryInfo,
@@ -132,15 +133,48 @@ export class SubscriptionService {
       };
     }
 
-    // 2. Validate repo with OAuth token
+    // 2. Check if GitHub App is installed (check this first for private repos)
+    const installationId =
+      await this.installationService.isRepoInstalled(repoIdentifier);
+
+    // 3. Validate repo with OAuth token
     let repoInfo: RepositoryInfo;
     try {
       repoInfo = await validateRepository(githubToken, owner, repo);
     } catch (error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const status = (error as any)?.cause?.status;
+
+      // If 404 and no installation, might be a private repo that needs installation
+      if (status === 404 && !installationId) {
+        // Get owner ID from public profile for installation URL
+        const ownerId = await getOwnerIdFromUsername(githubToken, owner);
+
+        return {
+          success: false,
+          requiresInstallation: true,
+          installUrl: this.generateInstallUrl(ownerId),
+          repoFullName: repoIdentifier,
+          eventTypes: requestedEventTypes,
+          error: `Repository not found or you don't have access.`,
+        };
+      }
+
+      // Check if this might be an org approval issue
+      const isOrgRepo =
+        repoIdentifier.includes("/") &&
+        !repoIdentifier
+          .toLowerCase()
+          .startsWith(`${githubUser.login.toLowerCase()}/`);
+
       const errorMessage =
-        error instanceof Error
-          ? error.message
-          : `Failed to validate repository: ${repoIdentifier}`;
+        status === 403 && isOrgRepo
+          ? `Access denied to ${repoIdentifier}. This organization may need to approve the GitHub App. ` +
+            `Ask an organization admin to approve the app in GitHub settings.`
+          : error instanceof Error
+            ? error.message
+            : `Failed to validate repository: ${repoIdentifier}`;
+
       return {
         success: false,
         requiresInstallation: false,
@@ -148,11 +182,8 @@ export class SubscriptionService {
       };
     }
 
-    // 3. Determine delivery mode
+    // 4. Determine delivery mode based on installation and repo type
     let deliveryMode: "webhook" | "polling";
-    const installationId = await this.installationService.isRepoInstalled(
-      repoInfo.fullName
-    );
 
     if (repoInfo.isPrivate) {
       // Private repos MUST have GitHub App installed
@@ -425,11 +456,13 @@ export class SubscriptionService {
 
   /**
    * Generate GitHub App installation URL
-   * @param targetId - Owner ID (user or org)
+   * @param targetId - Owner ID (user or org), optional
    * @returns Installation URL
    */
-  private generateInstallUrl(targetId: number): string {
+  private generateInstallUrl(targetId?: number): string {
     const appSlug = process.env.GITHUB_APP_SLUG || "towns-github-bot";
-    return `https://github.com/apps/${appSlug}/installations/new/permissions?target_id=${targetId}`;
+    const baseUrl = `https://github.com/apps/${appSlug}/installations/new`;
+
+    return targetId ? `${baseUrl}/permissions?target_id=${targetId}` : baseUrl;
   }
 }

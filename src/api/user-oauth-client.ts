@@ -53,12 +53,24 @@ export async function validateRepository(
     };
   } catch (error) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    if ((error as any)?.status === 404 || (error as any)?.status === 403) {
+    const status = (error as any)?.status;
+
+    if (status === 404) {
       throw new Error(
-        `Repository not found or you don't have access: ${owner}/${repo}`,
+        `Repository not found or you don't have access to ${owner}/${repo}`,
         { cause: error }
       );
     }
+
+    if (status === 403) {
+      // 403 often means org hasn't approved the GitHub App
+      throw new Error(
+        `Access denied to ${owner}/${repo}. If this is a private organization repository, ` +
+          `the organization admin may need to approve this GitHub App in GitHub settings.`,
+        { cause: error }
+      );
+    }
+
     throw error;
   }
 }
@@ -85,5 +97,36 @@ export async function getUserProfile(token: string): Promise<UserProfile> {
       throw new Error("GitHub token is invalid or expired", { cause: error });
     }
     throw error;
+  }
+}
+
+/**
+ * Get owner ID from username or org using user's OAuth token
+ * Fetches public profile - works even without repo access
+ * @param token - User's GitHub OAuth access token
+ * @param owner - Repository owner username or org name
+ * @returns Owner ID or undefined if lookup fails
+ */
+export async function getOwnerIdFromUsername(
+  token: string,
+  owner: string
+): Promise<number | undefined> {
+  try {
+    const octokit = new Octokit({ auth: token });
+
+    // Try as organization first (most private repos are in orgs)
+    try {
+      const { data } = await octokit.orgs.get({ org: owner });
+      return data.id;
+    } catch {
+      // If not org, try as user
+      const { data } = await octokit.users.getByUsername({
+        username: owner,
+      });
+      return data.id;
+    }
+  } catch (error) {
+    console.warn(`Could not fetch owner ID for ${owner}:`, error);
+    return undefined; // Fallback: omit target_id
   }
 }

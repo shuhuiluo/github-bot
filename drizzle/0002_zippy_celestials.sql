@@ -1,0 +1,1 @@
+ALTER TABLE "github_user_tokens" DROP COLUMN "scope";

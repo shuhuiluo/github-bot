@@ -25,7 +25,6 @@ export const githubUserTokens = pgTable(
     githubLogin: text("github_login").notNull(),
     accessToken: text("access_token").notNull(), // Encrypted
     tokenType: text("token_type").notNull(),
-    scope: text("scope"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     refreshToken: text("refresh_token"),
     refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
