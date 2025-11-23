@@ -1,7 +1,10 @@
 import type { BotHandler } from "@towns-protocol/bot";
 
 import { ALLOWED_EVENT_TYPES, DEFAULT_EVENT_TYPES } from "../constants";
-import type { GitHubOAuthService } from "../services/github-oauth-service";
+import {
+  TokenStatus,
+  type GitHubOAuthService,
+} from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";
 import { stripMarkdown } from "../utils/stripper";
@@ -97,9 +100,10 @@ async function handleSubscribe(
     return;
   }
 
-  // Check if user has linked their GitHub account
-  const isLinked = await oauthService.isLinked(userId);
-  if (!isLinked) {
+  // Check if user has linked their GitHub account and token is valid
+  const tokenStatus = await oauthService.validateToken(userId);
+
+  if (tokenStatus !== TokenStatus.Valid) {
     const authUrl = await oauthService.getAuthorizationUrl(
       userId,
       channelId,
@@ -107,13 +111,41 @@ async function handleSubscribe(
       "subscribe",
       { repo, eventTypes }
     );
-    await handler.sendMessage(
-      channelId,
-      `🔐 **GitHub Account Required**\n\n` +
-        `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
-        `[Connect GitHub Account](${authUrl})`
-    );
-    return;
+
+    switch (tokenStatus) {
+      case TokenStatus.NotLinked:
+        await handler.sendMessage(
+          channelId,
+          `🔐 **GitHub Account Required**\n\n` +
+            `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
+            `[Connect GitHub Account](${authUrl})`
+        );
+        return;
+
+      case TokenStatus.Invalid:
+        await handler.sendMessage(
+          channelId,
+          `⚠️ **GitHub Token Expired**\n\n` +
+            `Your GitHub token has expired or been revoked. Please reconnect your account.\n\n` +
+            `[Reconnect GitHub Account](${authUrl})`
+        );
+        return;
+
+      case TokenStatus.Unknown:
+        await handler.sendMessage(
+          channelId,
+          `⚠️ **Unable to Verify GitHub Connection**\n\n` +
+            `We couldn't verify your GitHub token. This could be temporary (rate limiting) or indicate a connection issue.\n\n` +
+            `Please try again in a few moments, or [reconnect your account](${authUrl}) if the problem persists.`
+        );
+        return;
+
+      default: {
+        // TypeScript exhaustiveness check
+        const _exhaustive: never = tokenStatus;
+        return _exhaustive;
+      }
+    }
   }
 
   // Create subscription (OAuth check already done)
@@ -145,16 +177,11 @@ async function handleSubscribe(
 
   // Success - format response
   const eventTypeDisplay = formatEventTypes(eventTypes);
-  let deliveryInfo = "";
-
-  if (result.deliveryMode === "webhook") {
-    deliveryInfo = "⚡ Real-time webhook delivery enabled!";
-  } else {
-    // Add installation suggestion for public repos
-    deliveryInfo =
-      "⏱️ Events are checked every 5 minutes (polling mode)\n\n" +
-      `💡 **Want real-time notifications?** [Install the GitHub App](${result.installUrl})`;
-  }
+  const deliveryInfo =
+    result.deliveryMode === "webhook"
+      ? "⚡ Real-time webhook delivery enabled!"
+      : "⏱️ Events are checked every 5 minutes (polling mode)\n\n" +
+        `💡 **Want real-time notifications?** [Install the GitHub App](${result.installUrl})`;
 
   await handler.sendMessage(
     channelId,

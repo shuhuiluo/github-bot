@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
 
 import {
+  getUserProfile,
+  validateRepository,
+  type RepositoryInfo,
+  type UserProfile,
+} from "../api/user-oauth-client";
+import {
   DEFAULT_EVENT_TYPES,
   PENDING_MESSAGE_CLEANUP_INTERVAL_MS,
   PENDING_MESSAGE_MAX_AGE_MS,
@@ -10,7 +16,6 @@ import { githubSubscriptions } from "../db/schema";
 import { InstallationService } from "../github-app/installation-service";
 import type { TownsBot } from "../types/bot";
 import { GitHubOAuthService } from "./github-oauth-service";
-import { UserOAuthClient, type RepositoryInfo } from "./user-oauth-client";
 
 /**
  * Subscription request parameters
@@ -72,7 +77,6 @@ export class SubscriptionService {
 
   constructor(
     private oauthService: GitHubOAuthService,
-    private userClient: UserOAuthClient,
     private installationService: InstallationService,
     private bot?: TownsBot
   ) {
@@ -113,16 +117,25 @@ export class SubscriptionService {
     }
 
     // Get user's GitHub login for tracking
-    const githubUser = await this.userClient.getUserProfile(githubToken);
+    let githubUser: UserProfile;
+    try {
+      githubUser = await getUserProfile(githubToken);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Failed to get GitHub user profile";
+      return {
+        success: false,
+        requiresInstallation: false,
+        error: errorMessage,
+      };
+    }
 
     // 2. Validate repo with OAuth token
     let repoInfo: RepositoryInfo;
     try {
-      repoInfo = await this.userClient.validateRepository(
-        githubToken,
-        owner,
-        repo
-      );
+      repoInfo = await validateRepository(githubToken, owner, repo);
     } catch (error) {
       const errorMessage =
         error instanceof Error

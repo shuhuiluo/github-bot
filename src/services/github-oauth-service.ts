@@ -33,6 +33,16 @@ export interface OAuthCallbackResult {
 }
 
 /**
+ * Token validation status result
+ */
+export enum TokenStatus {
+  NotLinked = "not-linked",
+  Invalid = "invalid",
+  Valid = "valid",
+  Unknown = "unknown",
+}
+
+/**
  * GitHubOAuthService - Manages OAuth authentication for Towns users
  *
  * Uses Octokit app's built-in OAuth support (app.oauth) to:
@@ -284,9 +294,7 @@ export class GitHubOAuthService {
     }
 
     // Create Octokit REST instance with user's access token
-    return new Octokit({
-      auth: token.accessToken,
-    });
+    return new Octokit({ auth: token.accessToken });
   }
 
   /**
@@ -304,9 +312,7 @@ export class GitHubOAuthService {
     try {
       const oauth = this.githubApp.getOAuth();
       if (oauth) {
-        await oauth.deleteToken({
-          token: token.accessToken,
-        });
+        await oauth.deleteToken({ token: token.accessToken });
       }
     } catch (error) {
       console.error("Failed to revoke token on GitHub:", error);
@@ -320,14 +326,51 @@ export class GitHubOAuthService {
   }
 
   /**
-   * Check if a Towns user has linked their GitHub account
+   * Validate that a user's stored GitHub token exists and is still valid.
+   *
+   * Note: This method will automatically delete invalid tokens from the database
+   * when GitHub returns a 401 response, indicating the token has been revoked or expired.
    *
    * @param townsUserId - Towns user ID
-   * @returns true if linked, false otherwise
+   * @returns Token validation status
    */
-  async isLinked(townsUserId: string): Promise<boolean> {
-    const token = await this.getUserToken(townsUserId);
-    return token !== null;
+  async validateToken(townsUserId: string): Promise<TokenStatus> {
+    try {
+      const octokit = await this.getUserOctokit(townsUserId);
+      if (!octokit) {
+        return TokenStatus.NotLinked;
+      }
+
+      await octokit.users.getAuthenticated();
+      return TokenStatus.Valid;
+    } catch (error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const status = (error as any)?.status;
+
+      if (status === 401) {
+        // Token is invalid/revoked - delete it from database
+        console.log(
+          `Removing invalid OAuth token for Towns user ${townsUserId}`
+        );
+        await db
+          .delete(githubUserTokens)
+          .where(eq(githubUserTokens.townsUserId, townsUserId));
+        return TokenStatus.Invalid;
+      }
+
+      if (status === 403) {
+        // Could be insufficient scope, rate limit, or account lockout
+        // Don't delete token - let user retry or reconnect
+        console.warn(
+          `GitHub returned 403 for ${townsUserId} - insufficient scope, rate limit, or lockout`
+        );
+        return TokenStatus.Unknown;
+      }
+
+      // Other errors (network issues, DB errors, decryption failures, etc.)
+      console.warn(`Error validating token for ${townsUserId}:`, error);
+      return TokenStatus.Unknown;
+    }
   }
 
   /**

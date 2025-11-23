@@ -19,7 +19,6 @@ import { GitHubOAuthService } from "./services/github-oauth-service";
 import { OAuthCleanupService } from "./services/oauth-cleanup-service";
 import { PollingService } from "./services/polling-service";
 import { SubscriptionService } from "./services/subscription-service";
-import { UserOAuthClient } from "./services/user-oauth-client";
 
 await dbReady;
 console.log("✅ Database ready (schema ensured)");
@@ -43,10 +42,8 @@ const oauthService = new GitHubOAuthService(githubApp);
 const oauthCleanupService = new OAuthCleanupService();
 
 // Subscription services
-const userOAuthClient = new UserOAuthClient();
 const subscriptionService = new SubscriptionService(
   oauthService,
-  userOAuthClient,
   installationService,
   bot
 );

@@ -15,8 +15,8 @@ export async function sendOAuthPrompt(
   try {
     const authUrl = await oauthService.getAuthorizationUrl(
       userId,
-      spaceId,
-      channelId
+      channelId,
+      spaceId
     );
     await handler.sendMessage(
       channelId,
