@@ -131,18 +131,68 @@ export class InstallationService {
    */
   async isRepoInstalled(repo: string): Promise<number | null> {
     try {
+      // First check DB (fast path)
       const installation = await db
         .select()
         .from(installationRepositories)
         .where(eq(installationRepositories.repoFullName, repo))
         .limit(1);
 
-      return installation[0]?.installationId ?? null;
+      if (installation[0]?.installationId) {
+        return installation[0].installationId;
+      }
+
+      // DB miss - check GitHub API as fallback (handles DB out-of-sync scenarios)
+      const [owner, repoName] = repo.split("/");
+      if (!owner || !repoName) {
+        return null;
+      }
+
+      return await this.checkRepoInstallationFromAPI(owner, repoName);
     } catch (error) {
       console.warn(
         `[InstallationService] Failed to check repo installation for ${repo}:`,
         error
       );
+      return null;
+    }
+  }
+
+  /**
+   * Check GitHub API for repository installation (fallback when DB is out of sync)
+   * Syncs installation data to DB if found
+   */
+  private async checkRepoInstallationFromAPI(
+    owner: string,
+    repo: string
+  ): Promise<number | null> {
+    try {
+      if (!this.githubApp.isEnabled()) {
+        return null;
+      }
+
+      const octokit = this.githubApp.getAppOctokit();
+      const { data } = await octokit.request(
+        "GET /repos/{owner}/{repo}/installation",
+        { owner, repo }
+      );
+
+      // Sync installation data to DB for future lookups
+      await this.ensureInstallationExists(data.id);
+
+      // Add repo to installation_repositories table and upgrade any polling subscriptions
+      const fullName = `${owner}/${repo}`;
+      await this.addRepoAndUpgrade(fullName, data.id);
+
+      return data.id;
+    } catch (error) {
+      // 404 = app not installed on this repo
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      if ((error as any)?.status === 404) {
+        return null;
+      }
+      // Other errors (rate limit, network issues) - log and return null
+      console.warn(`Error checking installation for ${owner}/${repo}:`, error);
       return null;
     }
   }
