@@ -362,10 +362,10 @@ export class GitHubOAuthService {
       }
 
       if (status === 403) {
-        // Could be insufficient scope, rate limit, or account lockout
+        // Could be insufficient permissions, rate limit, or account lockout
         // Don't delete token - let user retry or reconnect
         console.warn(
-          `GitHub returned 403 for ${townsUserId} - insufficient scope, rate limit, or lockout`
+          `GitHub returned 403 for ${townsUserId} - insufficient permissions, rate limit, or lockout`
         );
         return TokenStatus.Unknown;
       }
