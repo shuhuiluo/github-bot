@@ -610,12 +610,17 @@ export class SubscriptionService {
 
   /**
    * Parse and normalize event types string to canonical lowercase array
+   * Defaults to DEFAULT_EVENT_TYPES if the stored value is null/empty for consistency
    * @param eventTypes - Comma-separated event types string
    * @returns Array of normalized event type tokens
    */
   private parseEventTypesString(eventTypes: string | null): string[] {
-    if (!eventTypes) return [];
-    return eventTypes
+    const source =
+      eventTypes && eventTypes.trim().length > 0
+        ? eventTypes
+        : DEFAULT_EVENT_TYPES;
+
+    return source
       .split(",")
       .map(t => t.trim().toLowerCase())
       .filter(t => t.length > 0);

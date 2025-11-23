@@ -365,9 +365,14 @@ async function handleUnsubscribe(
     } else {
       const removedLabel =
         actuallyRemoved.length > 0 ? actuallyRemoved.join(", ") : "(none)";
+      const header =
+        actuallyRemoved.length > 0
+          ? `✅ **Updated subscription to ${repo}**\n\n`
+          : `ℹ️ **Subscription to ${repo} unchanged**\n\n`;
+
       await handler.sendMessage(
         channelId,
-        `✅ **Updated subscription to ${repo}**\n\n` +
+        header +
           `Removed: **${removedLabel}**\n` +
           `Remaining: **${formatEventTypes(removeResult.eventTypes!)}**`
       );
