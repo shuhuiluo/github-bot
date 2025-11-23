@@ -76,30 +76,7 @@ export class InstallationService {
     console.log(`GitHub App uninstalled: ${accountLogin} (${installation.id})`);
 
     // Downgrade subscriptions before deleting installation
-    if (this.subscriptionService) {
-      try {
-        const { downgraded, removed } =
-          await this.subscriptionService.downgradeToPolling(installation.id);
-
-        if (downgraded > 0) {
-          console.log(
-            `Downgraded ${downgraded} subscription(s) from webhook to polling mode`
-          );
-        }
-
-        if (removed > 0) {
-          console.log(
-            `Removed ${removed} private repo subscription(s) (requires app installation)`
-          );
-        }
-      } catch (error) {
-        console.error(
-          `Failed to downgrade subscriptions for installation ${installation.id}:`,
-          error
-        );
-        // Continue with deletion even if downgrade fails
-      }
-    }
+    await this.handleDowngrade(installation.id);
 
     // Remove installation (foreign key CASCADE automatically deletes related repositories)
     // Note: This will also SET NULL on githubSubscriptions.installationId via foreign key
@@ -138,6 +115,13 @@ export class InstallationService {
       `Repositories removed from installation ${installation.id}: ${repositories_removed.map(r => r.full_name || "unknown").join(", ")}`
     );
 
+    // Downgrade subscriptions before deleting installation repos
+    const repoNames = repositories_removed
+      .map(r => r.full_name)
+      .filter((name): name is string => Boolean(name));
+
+    await this.handleDowngrade(installation.id, repoNames);
+
     // Remove repositories from normalized table
     for (const repo of repositories_removed) {
       if (!repo.full_name) continue;
@@ -149,6 +133,41 @@ export class InstallationService {
             eq(installationRepositories.repoFullName, repo.full_name)
           )
         );
+    }
+  }
+
+  /**
+   * Helper to downgrade subscriptions and log results
+   */
+  private async handleDowngrade(
+    installationId: number,
+    repos?: string[]
+  ): Promise<void> {
+    if (!this.subscriptionService) return;
+
+    try {
+      const { downgraded, removed } =
+        await this.subscriptionService.downgradeSubscriptions(
+          installationId,
+          repos
+        );
+
+      if (downgraded > 0) {
+        console.log(
+          `Downgraded ${downgraded} subscription(s) from webhook to polling mode`
+        );
+      }
+
+      if (removed > 0) {
+        console.log(
+          `Removed ${removed} private repo subscription(s) (requires app installation)`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Failed to downgrade subscriptions for installation ${installationId}:`,
+        error
+      );
     }
   }
 
