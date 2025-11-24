@@ -22,10 +22,10 @@ export async function handleGithubSubscription(
   if (!action) {
     await handler.sendMessage(
       channelId,
-      "**Usage:**\n" +
-        "• `/github subscribe owner/repo [--events pr,issues,commits,releases,ci,comments,reviews,branches,review_comments,stars,forks,all]` - Subscribe to GitHub events\n" +
-        "• `/github unsubscribe owner/repo` - Unsubscribe from a repository\n" +
-        "• `/github status` - Show current subscriptions"
+      "**Usage:**\n\n" +
+        `- \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\` - Subscribe to GitHub events\n\n` +
+        "- `/github unsubscribe owner/repo` - Unsubscribe from a repository\n\n" +
+        "- `/github status` - Show current subscriptions"
     );
     return;
   }
@@ -73,7 +73,7 @@ async function handleSubscribe(
   if (!repoArg) {
     await handler.sendMessage(
       channelId,
-      "❌ Usage: `/github subscribe owner/repo [--events pr,issues,commits,releases,ci,comments,reviews,branches,review_comments,stars,forks,all]`"
+      `❌ Usage: \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\``
     );
     return;
   }
