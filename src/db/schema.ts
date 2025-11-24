@@ -191,3 +191,38 @@ export const webhookDeliveries = pgTable(
     ),
   })
 );
+
+/**
+ * Pending subscriptions waiting for GitHub App installation
+ * Stores subscription attempts for private repos that require installation
+ * Auto-processed when installation webhook fires
+ */
+export const pendingSubscriptions = pgTable(
+  "pending_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    townsUserId: text("towns_user_id")
+      .notNull()
+      .references(() => githubUserTokens.townsUserId, {
+        onDelete: "cascade",
+      }),
+    spaceId: text("space_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    eventTypes: text("event_types").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  table => ({
+    expiresIndex: index("idx_pending_subscriptions_expires").on(
+      table.expiresAt
+    ),
+    userIndex: index("idx_pending_subscriptions_user").on(table.townsUserId),
+    repoIndex: index("idx_pending_subscriptions_repo").on(table.repoFullName),
+    uniquePending: uniqueIndex("pending_subscriptions_unique_idx").on(
+      table.spaceId,
+      table.channelId,
+      table.repoFullName
+    ),
+  })
+);

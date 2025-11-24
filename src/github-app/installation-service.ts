@@ -269,6 +269,7 @@ export class InstallationService {
     if (!this.subscriptionService) return;
 
     try {
+      // Upgrade existing polling subscriptions to webhook
       const upgraded = await this.subscriptionService.upgradeToWebhook(
         repoFullName,
         installationId
@@ -276,6 +277,17 @@ export class InstallationService {
       if (upgraded > 0) {
         console.log(
           `Upgraded ${upgraded} subscription(s) for ${repoFullName} to webhook delivery`
+        );
+      }
+
+      // Complete pending subscriptions that were waiting for installation
+      const completed =
+        await this.subscriptionService.completePendingSubscriptions(
+          repoFullName
+        );
+      if (completed > 0) {
+        console.log(
+          `Completed ${completed} pending subscription(s) for ${repoFullName}`
         );
       }
     } catch (error) {

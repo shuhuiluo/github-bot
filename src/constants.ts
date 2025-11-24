@@ -37,3 +37,15 @@ export const PENDING_MESSAGE_CLEANUP_INTERVAL_MS = 30000;
  * Messages older than this are considered stale and removed
  */
 export const PENDING_MESSAGE_MAX_AGE_MS = 60000;
+
+/**
+ * Pending subscription expiration time (1 hour)
+ * How long to wait for GitHub App installation before expiring
+ */
+export const PENDING_SUBSCRIPTION_EXPIRATION_MS = 60 * 60 * 1000;
+
+/**
+ * Pending subscription cleanup interval (1 hour)
+ * How often to check for and remove expired pending subscriptions
+ */
+export const PENDING_SUBSCRIPTION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;

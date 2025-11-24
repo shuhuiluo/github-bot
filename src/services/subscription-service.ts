@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import {
   getOwnerIdFromUsername,
@@ -11,9 +11,11 @@ import {
   DEFAULT_EVENT_TYPES,
   PENDING_MESSAGE_CLEANUP_INTERVAL_MS,
   PENDING_MESSAGE_MAX_AGE_MS,
+  PENDING_SUBSCRIPTION_CLEANUP_INTERVAL_MS,
+  PENDING_SUBSCRIPTION_EXPIRATION_MS,
 } from "../constants";
 import { db } from "../db";
-import { githubSubscriptions } from "../db/schema";
+import { githubSubscriptions, pendingSubscriptions } from "../db/schema";
 import { InstallationService } from "../github-app/installation-service";
 import type { TownsBot } from "../types/bot";
 import { GitHubOAuthService } from "./github-oauth-service";
@@ -86,6 +88,11 @@ export class SubscriptionService {
       () => this.cleanupPendingMessages(),
       PENDING_MESSAGE_CLEANUP_INTERVAL_MS
     );
+
+    // Clean up expired pending subscriptions periodically
+    setInterval(() => {
+      void this.cleanupExpiredPendingSubscriptions();
+    }, PENDING_SUBSCRIPTION_CLEANUP_INTERVAL_MS);
   }
 
   /**
@@ -150,6 +157,15 @@ export class SubscriptionService {
         // Get owner ID from public profile for installation URL
         const ownerId = await getOwnerIdFromUsername(githubToken, owner);
 
+        // Store pending subscription for completion after installation
+        await this.storePendingSubscription({
+          townsUserId,
+          spaceId,
+          channelId,
+          repoFullName: repoIdentifier,
+          eventTypes: requestedEventTypes,
+        });
+
         return {
           success: false,
           requiresInstallation: true,
@@ -188,6 +204,15 @@ export class SubscriptionService {
     if (repoInfo.isPrivate) {
       // Private repos MUST have GitHub App installed
       if (!installationId) {
+        // Store pending subscription for completion after installation
+        await this.storePendingSubscription({
+          townsUserId,
+          spaceId,
+          channelId,
+          repoFullName: repoInfo.fullName,
+          eventTypes: requestedEventTypes,
+        });
+
         return {
           success: false,
           requiresInstallation: true,
@@ -258,6 +283,108 @@ export class SubscriptionService {
         eventTypes: requestedEventTypes,
       };
     }
+  }
+
+  /**
+   * Store a pending subscription for completion after GitHub App installation
+   * Used when user tries to subscribe to private repo before installing GitHub App
+   */
+  private async storePendingSubscription(params: {
+    townsUserId: string;
+    spaceId: string;
+    channelId: string;
+    repoFullName: string;
+    eventTypes: string;
+  }): Promise<void> {
+    const now = new Date();
+    const expiresAt = new Date(
+      now.getTime() + PENDING_SUBSCRIPTION_EXPIRATION_MS
+    );
+
+    await db
+      .insert(pendingSubscriptions)
+      .values({
+        townsUserId: params.townsUserId,
+        spaceId: params.spaceId,
+        channelId: params.channelId,
+        repoFullName: params.repoFullName,
+        eventTypes: params.eventTypes,
+        createdAt: now,
+        expiresAt,
+      })
+      .onConflictDoNothing();
+
+    console.log(
+      `[Subscribe] Stored pending subscription for ${params.repoFullName}`
+    );
+  }
+
+  /**
+   * Complete pending subscriptions for a repository after GitHub App installation
+   * Called by InstallationService when repos are added to installation
+   * @returns Number of subscriptions completed
+   */
+  async completePendingSubscriptions(repoFullName: string): Promise<number> {
+    // Get all pending subscriptions for this repo
+    const pending = await db
+      .select()
+      .from(pendingSubscriptions)
+      .where(eq(pendingSubscriptions.repoFullName, repoFullName));
+
+    if (pending.length === 0) return 0;
+
+    console.log(
+      `[Subscribe] Processing ${pending.length} pending subscription(s) for ${repoFullName}`
+    );
+
+    let completed = 0;
+
+    // Process each pending subscription
+    for (const sub of pending) {
+      try {
+        // Validate user still has OAuth token
+        const token = await this.oauthService.getToken(sub.townsUserId);
+        if (!token) {
+          console.log(
+            `[Subscribe] Skipping pending - user ${sub.townsUserId} no longer has OAuth token`
+          );
+          continue;
+        }
+
+        // Create the subscription (will be webhook mode since installation exists)
+        const result = await this.createSubscription({
+          townsUserId: sub.townsUserId,
+          spaceId: sub.spaceId,
+          channelId: sub.channelId,
+          repoIdentifier: repoFullName,
+          eventTypes: sub.eventTypes,
+        });
+
+        if (result.success && this.bot) {
+          // Send success notification
+          await this.bot.sendMessage(
+            sub.channelId,
+            `✅ **Subscribed to [${repoFullName}](https://github.com/${repoFullName})**\n\n⚡ Real-time webhook delivery enabled!`
+          );
+          completed++;
+          console.log(
+            `[Subscribe] Completed pending subscription for ${repoFullName} in channel ${sub.channelId}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[Subscribe] Failed to complete pending subscription for ${repoFullName}:`,
+          error
+        );
+      }
+    }
+
+    // Delete processed pending subscriptions
+    await db
+      .delete(pendingSubscriptions)
+      .where(eq(pendingSubscriptions.repoFullName, repoFullName));
+
+    return completed;
   }
 
   /**
@@ -579,6 +706,30 @@ export class SubscriptionService {
       if (now - pending.timestamp > PENDING_MESSAGE_MAX_AGE_MS) {
         this.pendingMessages.delete(key);
       }
+    }
+  }
+
+  /**
+   * Clean up expired pending subscriptions
+   * Called periodically to remove subscriptions that have expired
+   */
+  private async cleanupExpiredPendingSubscriptions(): Promise<void> {
+    try {
+      const result = await db
+        .delete(pendingSubscriptions)
+        .where(sql`${pendingSubscriptions.expiresAt} < NOW()`)
+        .returning({ id: pendingSubscriptions.id });
+
+      if (result.length > 0) {
+        console.log(
+          `[Subscribe] Cleaned up ${result.length} expired pending subscription(s)`
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[Subscribe] Failed to clean up expired pending subscriptions:",
+        error
+      );
     }
   }
 
