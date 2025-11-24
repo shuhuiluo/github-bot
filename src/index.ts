@@ -4,6 +4,7 @@ import { logger } from "hono/logger";
 import { makeTownsBot } from "@towns-protocol/bot";
 
 import commands from "./commands";
+import { ALLOWED_EVENT_TYPES } from "./constants";
 import { db, dbReady } from "./db";
 import { githubInstallations } from "./db/schema";
 import { GitHubApp } from "./github-app/app";
@@ -140,7 +141,7 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
       "• `/github subscribe owner/repo [--events=pr,issues,...]`\n" +
       "• `/github unsubscribe owner/repo`\n" +
       "• `/github status`\n\n" +
-      "**Events:** pr, issues, commits, releases, ci, comments, reviews, branches, forks, stars\n\n" +
+      `**Events:** ${ALLOWED_EVENT_TYPES.join(", ")}\n\n` +
       "**Queries** _(public repos)_\n" +
       "• `/gh_pr owner/repo #123 [--full]`\n" +
       "• `/gh_pr list owner/repo [count] [--state=...] [--author=...]`\n" +

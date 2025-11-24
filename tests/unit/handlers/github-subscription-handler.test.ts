@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import * as githubClient from "../../../src/api/github-client";
+import {
+  ALLOWED_EVENT_TYPES,
+  DEFAULT_EVENT_TYPES,
+} from "../../../src/constants";
 import { dbService } from "../../../src/db";
 import { handleGithubSubscription } from "../../../src/handlers/github-subscription-handler";
 import { createMockBotHandler } from "../../fixtures/mock-bot-handler";
@@ -24,7 +28,7 @@ describe("github subscription handler", () => {
       expect(mockHandler.sendMessage).toHaveBeenCalledWith(
         "test-channel",
         "**Usage:**\n" +
-          "• `/github subscribe owner/repo [--events pr,issues,commits,releases,ci,comments,reviews,branches,review_comments,stars,forks,all]` - Subscribe to GitHub events\n" +
+          `• \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\` - Subscribe to GitHub events\n` +
           "• `/github unsubscribe owner/repo` - Unsubscribe from a repository\n" +
           "• `/github status` - Show current subscriptions"
       );
@@ -78,7 +82,7 @@ describe("github subscription handler", () => {
         dbService,
         "getChannelSubscriptions"
       ).mockResolvedValue([
-        { repo: "owner/repo", eventTypes: "pr,issues,commits,releases" },
+        { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
       ]);
       const unsubscribeSpy = spyOn(dbService, "unsubscribe").mockResolvedValue(
         true
@@ -103,7 +107,7 @@ describe("github subscription handler", () => {
         dbService,
         "getChannelSubscriptions"
       ).mockResolvedValue([
-        { repo: "owner/repo", eventTypes: "pr,issues,commits,releases" },
+        { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
       ]);
 
       await handleGithubSubscription(mockHandler, {
@@ -129,7 +133,7 @@ describe("github subscription handler", () => {
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
       expect(mockHandler.sendMessage).toHaveBeenCalledWith(
         "test-channel",
-        "❌ Usage: `/github subscribe owner/repo [--events pr,issues,commits,releases,ci,comments,reviews,branches,review_comments,stars,forks,all]`"
+        `❌ Usage: \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\``
       );
     });
 
@@ -204,7 +208,7 @@ describe("github subscription handler", () => {
       expect(subscribeSpy).toHaveBeenCalledWith(
         "test-channel",
         "facebook/react",
-        "pr,issues,commits,releases"
+        DEFAULT_EVENT_TYPES
       );
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
 
@@ -212,7 +216,7 @@ describe("github subscription handler", () => {
       expect(message).toContain(
         "✅ **Subscribed to [facebook/react](https://github.com/facebook/react)**"
       );
-      expect(message).toContain("pr, issues, commits, releases");
+      expect(message).toContain(DEFAULT_EVENT_TYPES.replace(/,/g, ", "));
 
       validateRepoSpy.mockRestore();
       isSubscribedSpy.mockRestore();
@@ -268,7 +272,7 @@ describe("github subscription handler", () => {
       expect(subscribeSpy).toHaveBeenCalledWith(
         "test-channel",
         "owner/repo",
-        "pr,issues,commits,releases,ci,comments,reviews,branches,review_comments,stars,forks"
+        ALLOWED_EVENT_TYPES.join(",")
       );
 
       validateRepoSpy.mockRestore();
@@ -326,7 +330,7 @@ describe("github subscription handler", () => {
       expect(subscribeSpy).toHaveBeenCalledWith(
         "test-channel",
         "owner/repo",
-        "pr,issues,commits,releases"
+        DEFAULT_EVENT_TYPES
       );
 
       validateRepoSpy.mockRestore();
@@ -419,7 +423,7 @@ describe("github subscription handler", () => {
         dbService,
         "getChannelSubscriptions"
       ).mockResolvedValue([
-        { repo: "owner/other", eventTypes: "pr,issues,commits,releases" },
+        { repo: "owner/other", eventTypes: DEFAULT_EVENT_TYPES },
       ]);
 
       await handleGithubSubscription(mockHandler, {
@@ -441,7 +445,7 @@ describe("github subscription handler", () => {
         dbService,
         "getChannelSubscriptions"
       ).mockResolvedValue([
-        { repo: "owner/repo", eventTypes: "pr,issues,commits,releases" },
+        { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
       ]);
       const unsubscribeSpy = spyOn(dbService, "unsubscribe").mockResolvedValue(
         true
@@ -466,7 +470,7 @@ describe("github subscription handler", () => {
         dbService,
         "getChannelSubscriptions"
       ).mockResolvedValue([
-        { repo: "owner/repo", eventTypes: "pr,issues,commits,releases" },
+        { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
       ]);
       const unsubscribeSpy = spyOn(dbService, "unsubscribe").mockResolvedValue(
         true
@@ -512,7 +516,7 @@ describe("github subscription handler", () => {
         dbService,
         "getChannelSubscriptions"
       ).mockResolvedValue([
-        { repo: "facebook/react", eventTypes: "pr,issues,commits,releases" },
+        { repo: "facebook/react", eventTypes: DEFAULT_EVENT_TYPES },
       ]);
 
       await handleGithubSubscription(mockHandler, {
@@ -532,7 +536,7 @@ describe("github subscription handler", () => {
         dbService,
         "getChannelSubscriptions"
       ).mockResolvedValue([
-        { repo: "facebook/react", eventTypes: "pr,issues,commits,releases" },
+        { repo: "facebook/react", eventTypes: DEFAULT_EVENT_TYPES },
         { repo: "microsoft/vscode", eventTypes: "pr,ci" },
         { repo: "vercel/next.js", eventTypes: "all" },
       ]);
@@ -545,7 +549,7 @@ describe("github subscription handler", () => {
       const message = mockHandler.sendMessage.mock.calls[0][1];
       expect(message).toContain("📬 **Subscribed Repositories (3):**");
       expect(message).toContain(
-        "• facebook/react (pr, issues, commits, releases)"
+        `• facebook/react (${DEFAULT_EVENT_TYPES.replace(/,/g, ", ")})`
       );
       expect(message).toContain("• microsoft/vscode (pr, ci)");
       expect(message).toContain("• vercel/next.js (all)");
