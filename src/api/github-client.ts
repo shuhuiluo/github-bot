@@ -36,19 +36,19 @@ export function classifyApiError(error: unknown): GitHubApiErrorType {
   return "unknown";
 }
 
-function parseRepo(repo: string): { owner: string; repo: string } {
-  const [owner, repoName] = repo.split("/");
-  return { owner, repo: repoName };
+export function parseRepo(repoFullName: string): [owner: string, repo: string] {
+  const [owner, repo] = repoFullName.split("/");
+  return [owner, repo];
 }
 
 export async function validateRepo(
-  repo: string,
+  repoFullName: string,
   userOctokit?: Octokit
 ): Promise<boolean> {
   try {
     const client = userOctokit || octokit;
-    const { owner, repo: repoName } = parseRepo(repo);
-    await client.repos.get({ owner, repo: repoName });
+    const [owner, repo] = parseRepo(repoFullName);
+    await client.repos.get({ owner, repo });
     return true;
   } catch {
     return false;
@@ -56,43 +56,43 @@ export async function validateRepo(
 }
 
 export async function getIssue(
-  repo: string,
+  repoFullName: string,
   issueNumber: string,
   userOctokit?: Octokit
 ): Promise<GitHubIssue> {
   const client = userOctokit || octokit;
-  const { owner, repo: repoName } = parseRepo(repo);
+  const [owner, repo] = parseRepo(repoFullName);
   const { data } = await client.issues.get({
     owner,
-    repo: repoName,
+    repo,
     issue_number: parseInt(issueNumber),
   });
   return data;
 }
 
 export async function getPullRequest(
-  repo: string,
+  repoFullName: string,
   prNumber: string,
   userOctokit?: Octokit
 ): Promise<GitHubPullRequest> {
   const client = userOctokit || octokit;
-  const { owner, repo: repoName } = parseRepo(repo);
+  const [owner, repo] = parseRepo(repoFullName);
   const { data } = await client.pulls.get({
     owner,
-    repo: repoName,
+    repo,
     pull_number: parseInt(prNumber),
   });
   return data;
 }
 
 export async function listPullRequests(
-  repo: string,
+  repoFullName: string,
   count: number = 10,
   filters?: { state?: string; author?: string },
   userOctokit?: Octokit
 ): Promise<GitHubPullRequestList> {
   const client = userOctokit || octokit;
-  const { owner, repo: repoName } = parseRepo(repo);
+  const [owner, repo] = parseRepo(repoFullName);
 
   // Determine API state (merged PRs are fetched as closed)
   let apiState: "open" | "closed" | "all" = "all";
@@ -109,7 +109,7 @@ export async function listPullRequests(
   // Use Octokit's pagination iterator
   const iterator = client.paginate.iterator(client.pulls.list, {
     owner,
-    repo: repoName,
+    repo,
     state: apiState,
     per_page: 100,
     sort: "created",
@@ -149,19 +149,19 @@ export async function listPullRequests(
 }
 
 export async function listIssues(
-  repo: string,
+  repoFullName: string,
   count: number = 10,
   filters?: { state?: string; creator?: string },
   userOctokit?: Octokit
 ): Promise<GitHubIssueList> {
   const client = userOctokit || octokit;
-  const { owner, repo: repoName } = parseRepo(repo);
+  const [owner, repo] = parseRepo(repoFullName);
 
   // Build API query parameters
   const apiState = (filters?.state || "all") as "open" | "closed" | "all";
   const params: Parameters<typeof client.issues.listForRepo>[0] = {
     owner,
-    repo: repoName,
+    repo,
     state: apiState,
     per_page: 100,
     sort: "created",
@@ -211,19 +211,19 @@ export type GitHubEventRaw =
  * Returns `\{ events, etag \}` or `\{ notModified: true \}` if ETag matches
  */
 export async function fetchRepoEvents(
-  repo: string,
+  repoFullName: string,
   etag?: string
 ): Promise<
   | { events: GitHubEventRaw[]; etag: string; notModified?: false }
   | { notModified: true; etag?: never; events?: never }
 > {
-  const { owner, repo: repoName } = parseRepo(repo);
+  const [owner, repo] = parseRepo(repoFullName);
 
   try {
     // Use Octokit's request method to support ETag headers
     const response = await octokit.request("GET /repos/{owner}/{repo}/events", {
       owner,
-      repo: repoName,
+      repo,
       headers: etag ? { "If-None-Match": etag } : {},
     });
 
@@ -238,5 +238,28 @@ export async function fetchRepoEvents(
       return { notModified: true };
     }
     throw error;
+  }
+}
+
+/**
+ * Get owner ID from username or org name
+ * Uses public GitHub APIs (/orgs or /users) - no special auth required
+ */
+export async function getOwnerIdFromUsername(
+  owner: string
+): Promise<number | undefined> {
+  try {
+    // Try as organization first (most private repos are in orgs)
+    try {
+      const { data } = await octokit.orgs.get({ org: owner });
+      return data.id;
+    } catch {
+      // If not org, try as user
+      const { data } = await octokit.users.getByUsername({ username: owner });
+      return data.id;
+    }
+  } catch (error) {
+    console.warn(`Could not fetch owner ID for ${owner}:`, error);
+    return undefined;
   }
 }

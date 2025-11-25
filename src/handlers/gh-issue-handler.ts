@@ -10,6 +10,7 @@ import {
   formatIssueDetail,
   formatIssueList,
 } from "../formatters/command-formatters";
+import { sendInstallPrompt } from "../github-app/installation-service";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SlashCommandEvent } from "../types/bot";
 import { parseCommandArgs, validateIssueFilters } from "../utils/arg-parser";
@@ -82,11 +83,7 @@ async function handleShowIssue(
           );
           return;
         } catch {
-          // User token also failed - they don't have access
-          await handler.sendMessage(
-            channelId,
-            `❌ You don't have access to this repository`
-          );
+          await sendInstallPrompt(handler, channelId, repo);
           return;
         }
       }
@@ -168,11 +165,7 @@ async function handleListIssues(
           await sendIssueList(handler, channelId, actualIssues, repo);
           return;
         } catch {
-          // User token also failed - they don't have access
-          await handler.sendMessage(
-            channelId,
-            `❌ You don't have access to this repository`
-          );
+          await sendInstallPrompt(handler, channelId, repo);
           return;
         }
       }

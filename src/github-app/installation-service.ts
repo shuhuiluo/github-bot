@@ -1,5 +1,7 @@
 import { and, eq } from "drizzle-orm";
+import type { BotHandler } from "@towns-protocol/bot";
 
+import { getOwnerIdFromUsername, parseRepo } from "../api/github-client";
 import { db } from "../db";
 import { githubInstallations, installationRepositories } from "../db/schema";
 import type { SubscriptionService } from "../services/subscription-service";
@@ -8,6 +10,35 @@ import type {
   InstallationRepositoriesPayload,
 } from "../types/webhooks";
 import type { GitHubApp } from "./app";
+
+/**
+ * Generate GitHub App installation URL
+ * @param targetId - Owner ID (user or org), optional
+ */
+export function generateInstallUrl(targetId?: number): string {
+  const appSlug = process.env.GITHUB_APP_SLUG || "towns-github-bot";
+  const baseUrl = `https://github.com/apps/${appSlug}/installations/new`;
+  return targetId ? `${baseUrl}/permissions?target_id=${targetId}` : baseUrl;
+}
+
+/**
+ * Send GitHub App installation prompt when user has OAuth but no repo access
+ */
+export async function sendInstallPrompt(
+  handler: BotHandler,
+  channelId: string,
+  repoFullName: string
+): Promise<void> {
+  const [owner] = parseRepo(repoFullName);
+  const ownerId = await getOwnerIdFromUsername(owner);
+  const installUrl = generateInstallUrl(ownerId);
+  await handler.sendMessage(
+    channelId,
+    `❌ Cannot access this repository\n\n` +
+      `Private repositories require the GitHub App to be installed:\n` +
+      `[Install GitHub App](${installUrl})`
+  );
+}
 
 /**
  * InstallationService - Manages GitHub App installation lifecycle

@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 
+import { getOwnerIdFromUsername } from "../api/github-client";
 import {
-  getOwnerIdFromUsername,
   getUserProfile,
   validateRepository,
   type RepositoryInfo,
@@ -16,7 +16,10 @@ import {
 } from "../constants";
 import { db } from "../db";
 import { githubSubscriptions, pendingSubscriptions } from "../db/schema";
-import { InstallationService } from "../github-app/installation-service";
+import {
+  generateInstallUrl,
+  InstallationService,
+} from "../github-app/installation-service";
 import type { TownsBot } from "../types/bot";
 import { GitHubOAuthService } from "./github-oauth-service";
 
@@ -155,7 +158,7 @@ export class SubscriptionService {
       // If 404 and no installation, might be a private repo that needs installation
       if (status === 404 && !installationId) {
         // Get owner ID from public profile for installation URL
-        const ownerId = await getOwnerIdFromUsername(githubToken, owner);
+        const ownerId = await getOwnerIdFromUsername(owner);
 
         // Store pending subscription for completion after installation
         await this.storePendingSubscription({
@@ -169,7 +172,7 @@ export class SubscriptionService {
         return {
           success: false,
           requiresInstallation: true,
-          installUrl: this.generateInstallUrl(ownerId),
+          installUrl: generateInstallUrl(ownerId),
           repoFullName: repoIdentifier,
           eventTypes: requestedEventTypes,
           error: `Repository not found or you don't have access.`,
@@ -216,7 +219,7 @@ export class SubscriptionService {
         return {
           success: false,
           requiresInstallation: true,
-          installUrl: this.generateInstallUrl(repoInfo.owner.id),
+          installUrl: generateInstallUrl(repoInfo.owner.id),
           repoFullName: repoInfo.fullName,
           eventTypes: requestedEventTypes,
           error: `Private repository requires GitHub App installation`,
@@ -273,7 +276,7 @@ export class SubscriptionService {
         deliveryMode: "polling",
         repoFullName: repoInfo.fullName,
         eventTypes: requestedEventTypes,
-        installUrl: this.generateInstallUrl(repoInfo.owner.id),
+        installUrl: generateInstallUrl(repoInfo.owner.id),
       };
     } else {
       return {
@@ -731,17 +734,5 @@ export class SubscriptionService {
         error
       );
     }
-  }
-
-  /**
-   * Generate GitHub App installation URL
-   * @param targetId - Owner ID (user or org), optional
-   * @returns Installation URL
-   */
-  private generateInstallUrl(targetId?: number): string {
-    const appSlug = process.env.GITHUB_APP_SLUG || "towns-github-bot";
-    const baseUrl = `https://github.com/apps/${appSlug}/installations/new`;
-
-    return targetId ? `${baseUrl}/permissions?target_id=${targetId}` : baseUrl;
   }
 }

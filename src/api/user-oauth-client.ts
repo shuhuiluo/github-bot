@@ -99,34 +99,3 @@ export async function getUserProfile(token: string): Promise<UserProfile> {
     throw error;
   }
 }
-
-/**
- * Get owner ID from username or org using user's OAuth token
- * Fetches public profile - works even without repo access
- * @param token - User's GitHub OAuth access token
- * @param owner - Repository owner username or org name
- * @returns Owner ID or undefined if lookup fails
- */
-export async function getOwnerIdFromUsername(
-  token: string,
-  owner: string
-): Promise<number | undefined> {
-  try {
-    const octokit = new Octokit({ auth: token });
-
-    // Try as organization first (most private repos are in orgs)
-    try {
-      const { data } = await octokit.orgs.get({ org: owner });
-      return data.id;
-    } catch {
-      // If not org, try as user
-      const { data } = await octokit.users.getByUsername({
-        username: owner,
-      });
-      return data.id;
-    }
-  } catch (error) {
-    console.warn(`Could not fetch owner ID for ${owner}:`, error);
-    return undefined; // Fallback: omit target_id
-  }
-}
