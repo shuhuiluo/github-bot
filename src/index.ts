@@ -5,7 +5,7 @@ import { makeTownsBot } from "@towns-protocol/bot";
 
 import commands from "./commands";
 import { ALLOWED_EVENT_TYPES } from "./constants";
-import { db, dbReady } from "./db";
+import { db, runMigrations } from "./db";
 import { githubInstallations } from "./db/schema";
 import { GitHubApp } from "./github-app/app";
 import { EventProcessor } from "./github-app/event-processor";
@@ -21,7 +21,7 @@ import { OAuthCleanupService } from "./services/oauth-cleanup-service";
 import { PollingService } from "./services/polling-service";
 import { SubscriptionService } from "./services/subscription-service";
 
-await dbReady;
+await runMigrations();
 console.log("✅ Database ready (schema ensured)");
 
 const bot = await makeTownsBot(

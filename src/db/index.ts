@@ -60,13 +60,20 @@ const migrationsFolder = process.env.DRIZZLE_MIGRATIONS_PATH
   ? resolve(process.cwd(), process.env.DRIZZLE_MIGRATIONS_PATH)
   : resolve(process.cwd(), "drizzle");
 
+let migrationPromise: Promise<void> | null = null;
+
 /**
- * Automatically run database migrations on startup so we don't rely on manual CLI steps.
- * Exported promise allows callers to await readiness.
+ * Run database migrations. Call this on app startup.
+ * Safe to call multiple times - migrations only run once.
  */
-export const dbReady = migrate(db, {
-  migrationsFolder,
-}).catch(error => {
-  console.error("Failed to run database migrations", error);
-  throw error;
-});
+export function runMigrations(): Promise<void> {
+  if (!migrationPromise) {
+    migrationPromise = migrate(db, {
+      migrationsFolder,
+    }).catch(error => {
+      console.error("Failed to run database migrations", error);
+      throw error;
+    });
+  }
+  return migrationPromise;
+}
