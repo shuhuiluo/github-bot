@@ -8,6 +8,7 @@ import {
 import { Octokit } from "@octokit/rest";
 import { eq } from "drizzle-orm";
 
+import { OAUTH_TOKEN_REFRESH_BUFFER_MS } from "../constants";
 import { db } from "../db";
 import { githubUserTokens, oauthStates } from "../db/schema";
 import { GitHubApp } from "../github-app/app";
@@ -68,6 +69,8 @@ export class GitHubOAuthService {
   private githubApp: GitHubApp;
   private redirectUrl: string;
   private encryptionKey: Buffer;
+  /** In-flight refresh promises to prevent concurrent refresh race conditions */
+  private refreshPromises = new Map<string, Promise<string | null>>();
 
   constructor(githubApp: GitHubApp) {
     this.githubApp = githubApp;
@@ -275,30 +278,42 @@ export class GitHubOAuthService {
   }
 
   /**
-   * Get decrypted access token for a Towns user
+   * Get decrypted access token for a Towns user, automatically refreshing if expired
    *
    * @param townsUserId - Towns user ID
    * @returns Decrypted access token or null if not linked
    */
   async getToken(townsUserId: string): Promise<string | null> {
     const tokenData = await this.getUserToken(townsUserId);
-    return tokenData?.accessToken ?? null;
+    if (!tokenData) {
+      return null;
+    }
+
+    // Check if token is expired and refresh if needed
+    if (this.isTokenExpired(tokenData.expiresAt)) {
+      console.log(
+        `[OAuth] Access token expired for user ${townsUserId}, attempting refresh`
+      );
+      return this.refreshAccessToken(townsUserId);
+    }
+
+    return tokenData.accessToken;
   }
 
   /**
-   * Get user-scoped Octokit instance for API calls
+   * Get user-scoped Octokit instance for API calls, automatically refreshing token if expired
    *
    * @param townsUserId - Towns user ID
    * @returns Authenticated Octokit instance or null if not linked
    */
   async getUserOctokit(townsUserId: string): Promise<Octokit | null> {
-    const token = await this.getUserToken(townsUserId);
+    const token = await this.getToken(townsUserId);
     if (!token) {
       return null;
     }
 
     // Create Octokit REST instance with user's access token
-    return new Octokit({ auth: token.accessToken });
+    return new Octokit({ auth: token });
   }
 
   /**
@@ -323,10 +338,7 @@ export class GitHubOAuthService {
       // Continue with local deletion even if revocation fails
     }
 
-    // Remove from database
-    await db
-      .delete(githubUserTokens)
-      .where(eq(githubUserTokens.townsUserId, townsUserId));
+    await this.deleteUserToken(townsUserId);
   }
 
   /**
@@ -356,9 +368,7 @@ export class GitHubOAuthService {
         console.log(
           `Removing invalid OAuth token for Towns user ${townsUserId}`
         );
-        await db
-          .delete(githubUserTokens)
-          .where(eq(githubUserTokens.townsUserId, townsUserId));
+        await this.deleteUserToken(townsUserId);
         return TokenStatus.Invalid;
       }
 
@@ -375,6 +385,114 @@ export class GitHubOAuthService {
       console.warn(`Error validating token for ${townsUserId}:`, error);
       return TokenStatus.Unknown;
     }
+  }
+
+  /**
+   * Delete stored token for a Towns user
+   *
+   * @param townsUserId - Towns user ID
+   */
+  private async deleteUserToken(townsUserId: string): Promise<void> {
+    await db
+      .delete(githubUserTokens)
+      .where(eq(githubUserTokens.townsUserId, townsUserId));
+  }
+
+  /**
+   * Refresh an expired access token using the refresh token.
+   * Uses in-flight promise deduplication to prevent race conditions when
+   * multiple concurrent requests detect an expired token simultaneously.
+   *
+   * @param townsUserId - Towns user ID
+   * @returns New access token or null if refresh failed
+   */
+  private async refreshAccessToken(
+    townsUserId: string
+  ): Promise<string | null> {
+    // If a refresh is already in progress for this user, wait for it
+    const existingPromise = this.refreshPromises.get(townsUserId);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const refreshPromise = this.doRefreshAccessToken(townsUserId);
+    this.refreshPromises.set(townsUserId, refreshPromise);
+
+    try {
+      return await refreshPromise;
+    } finally {
+      this.refreshPromises.delete(townsUserId);
+    }
+  }
+
+  /**
+   * Actual token refresh logic.
+   * GitHub access tokens expire after 8 hours, refresh tokens after 6 months.
+   */
+  private async doRefreshAccessToken(
+    townsUserId: string
+  ): Promise<string | null> {
+    const tokenData = await this.getUserToken(townsUserId);
+    const { refreshToken, refreshTokenExpiresAt } = tokenData ?? {};
+
+    if (!refreshToken) {
+      console.log(`[OAuth] No refresh token available for user ${townsUserId}`);
+      return null;
+    }
+
+    // Check if refresh token itself is expired
+    if (refreshTokenExpiresAt && new Date() >= refreshTokenExpiresAt) {
+      console.log(`[OAuth] Refresh token expired for user ${townsUserId}`);
+      return null;
+    }
+
+    try {
+      const oauth = this.githubApp.getOAuth();
+      if (!oauth) {
+        throw new Error("OAuth not configured");
+      }
+
+      // Use Octokit's refreshToken method
+      const { authentication } = await oauth.refreshToken({ refreshToken });
+
+      // Update stored tokens
+      await db
+        .update(githubUserTokens)
+        .set({
+          accessToken: this.encryptToken(authentication.token),
+          expiresAt: new Date(authentication.expiresAt),
+          refreshToken: this.encryptToken(authentication.refreshToken),
+          refreshTokenExpiresAt: new Date(authentication.refreshTokenExpiresAt),
+          updatedAt: new Date(),
+        })
+        .where(eq(githubUserTokens.townsUserId, townsUserId));
+
+      console.log(
+        `[OAuth] Successfully refreshed token for user ${townsUserId}`
+      );
+      return authentication.token;
+    } catch (error) {
+      console.error(
+        `[OAuth] Failed to refresh token for user ${townsUserId}:`,
+        error
+      );
+      await this.deleteUserToken(townsUserId);
+      return null;
+    }
+  }
+
+  /**
+   * Check if access token is expired or about to expire
+   *
+   * @param expiresAt - Token expiration date
+   * @returns True if token is expired or expires within OAUTH_TOKEN_REFRESH_BUFFER_MS
+   */
+  private isTokenExpired(expiresAt: Date | null): boolean {
+    // If no expiration date, assume token doesn't expire (shouldn't happen with GitHub App OAuth)
+    return (
+      !!expiresAt &&
+      expiresAt.getTime() <= Date.now() + OAUTH_TOKEN_REFRESH_BUFFER_MS
+    );
   }
 
   /**

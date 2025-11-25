@@ -49,3 +49,10 @@ export const PENDING_SUBSCRIPTION_EXPIRATION_MS = 60 * 60 * 1000;
  * How often to check for and remove expired pending subscriptions
  */
 export const PENDING_SUBSCRIPTION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * OAuth token refresh buffer (5 minutes)
+ * Proactively refresh tokens that expire within this window.
+ * GitHub access tokens expire after 8 hours, refresh tokens after 6 months.
+ */
+export const OAUTH_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
