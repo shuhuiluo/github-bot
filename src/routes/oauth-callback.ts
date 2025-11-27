@@ -34,45 +34,41 @@ export async function handleOAuthCallback(
 
   try {
     // Handle OAuth callback
-    const result = await oauthService.handleCallback(code, state);
+    const {
+      githubLogin,
+      channelId,
+      spaceId,
+      townsUserId,
+      redirectAction,
+      redirectData,
+    } = await oauthService.handleCallback(code, state);
 
+    const message = `✅ GitHub account @${githubLogin} connected successfully!`;
     // Check if we should edit an existing message or send a new one
-    if (result.redirectData?.messageEventId) {
+    if (redirectData?.messageEventId) {
       // Edit the OAuth prompt message to show success
       try {
-        await bot.editMessage(
-          result.channelId,
-          result.redirectData.messageEventId,
-          `✅ GitHub account @${result.githubLogin} connected successfully!`
-        );
+        await bot.editMessage(channelId, redirectData.messageEventId, message);
       } catch (error) {
         // If edit fails (message deleted, etc.), fall back to sending new message
         console.error("Failed to edit OAuth message:", error);
-        await bot.sendMessage(
-          result.channelId,
-          `✅ GitHub account @${result.githubLogin} connected successfully!`
-        );
+        await bot.sendMessage(channelId, message);
       }
     } else {
       // Send new success message (for fresh OAuth connections or old flow)
-      await bot.sendMessage(
-        result.channelId,
-        `✅ GitHub account @${result.githubLogin} connected successfully!`
-      );
+      await bot.sendMessage(channelId, message);
     }
 
     // If there was a redirect action (e.g., subscribe), complete the subscription
-    if (result.redirectAction === "subscribe" && result.redirectData) {
-      if (result.redirectData.repo && result.spaceId && result.townsUserId) {
+    if (redirectAction === "subscribe" && redirectData) {
+      if (redirectData.repo && spaceId && townsUserId) {
         // Attempt subscription now that OAuth is complete
         const subResult = await subscriptionService.createSubscription({
-          townsUserId: result.townsUserId,
-          spaceId: result.spaceId,
-          channelId: result.channelId,
-          repoIdentifier: result.redirectData.repo,
-          eventTypes: result.redirectData.eventTypes ?? [
-            ...DEFAULT_EVENT_TYPES_ARRAY,
-          ],
+          townsUserId,
+          spaceId,
+          channelId,
+          repoIdentifier: redirectData.repo,
+          eventTypes: redirectData.eventTypes ?? [...DEFAULT_EVENT_TYPES_ARRAY],
         });
 
         if (subResult.success) {
@@ -83,14 +79,14 @@ export async function handleOAuthCallback(
               : `⏱️ Events checked every 5 minutes\n\n💡 [Install the GitHub App](<${subResult.installUrl}>) for real-time delivery`;
 
           const { eventId } = await bot.sendMessage(
-            result.channelId,
+            channelId,
             `✅ **Subscribed to [${subResult.repoFullName}](https://github.com/${subResult.repoFullName})**\n\n${deliveryInfo}`
           );
 
           // Track polling messages for potential upgrade to webhook
           if (subResult.deliveryMode === "polling" && eventId) {
             subscriptionService.registerPendingMessage(
-              result.channelId,
+              channelId,
               subResult.repoFullName,
               eventId
             );
@@ -109,7 +105,7 @@ export async function handleOAuthCallback(
           });
         } else {
           // Other error - notify in Towns
-          await bot.sendMessage(result.channelId, `❌ ${subResult.error}`);
+          await bot.sendMessage(channelId, `❌ ${subResult.error}`);
 
           return renderSuccess(c, {
             action: "subscribe",
@@ -121,8 +117,8 @@ export async function handleOAuthCallback(
 
     // Handle query command redirect (gh_pr, gh_issue)
     // Check if app installation is needed for the repo
-    if (result.redirectAction === "query" && result.redirectData?.repo) {
-      const repo = result.redirectData.repo;
+    if (redirectAction === "query" && redirectData?.repo) {
+      const repo = redirectData.repo;
       const installationId = await installationService.isRepoInstalled(repo);
 
       if (!installationId) {
