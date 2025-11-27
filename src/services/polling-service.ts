@@ -329,22 +329,18 @@ export class PollingService {
 /**
  * Check if an event matches the subscription's event type filter
  * @param eventType - GitHub event type (e.g., "PullRequestEvent") or null
- * @param subscriptionTypes - Comma-separated event types (e.g., "pr,issues") or "all" or null
+ * @param subscriptionTypes - Array of event types (e.g., ["pr", "issues"])
  */
 function isEventTypeMatch(
   eventType: string | null,
-  subscriptionTypes: string | null | undefined
+  subscriptionTypes: EventType[]
 ): boolean {
-  // Treat null event type or null/undefined/"all" subscription as match
-  if (!eventType || !subscriptionTypes || subscriptionTypes === "all")
-    return true;
-
-  const subscribedTypes = subscriptionTypes.split(",").map(t => t.trim());
+  // Treat null event type or empty subscription as match-all
+  if (!eventType || subscriptionTypes.length === 0) return true;
 
   // Check if the event type matches any of the subscribed short names
-  for (const shortName of subscribedTypes) {
-    const mappedTypes =
-      EVENT_TYPE_MAP[shortName as EventType]?.split(",") ?? [];
+  for (const shortName of subscriptionTypes) {
+    const mappedTypes = EVENT_TYPE_MAP[shortName]?.split(",") ?? [];
     if (mappedTypes.includes(eventType)) {
       return true;
     }

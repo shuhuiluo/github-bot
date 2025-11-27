@@ -188,7 +188,7 @@ function renderWebhookSuccess(
   sub: Extract<SubscribeResult, { deliveryMode: "webhook" }>
 ) {
   const safeRepo = escapeHtml(sub.repoFullName);
-  const safeEvents = escapeHtml(sub.eventTypes);
+  const safeEvents = escapeHtml(sub.eventTypes.join(", "));
 
   return c.html(`
     <!DOCTYPE html>
@@ -206,7 +206,7 @@ function renderWebhookSuccess(
           </div>
           <h1>✅ Subscribed to ${safeRepo}!</h1>
           <p class="delivery-mode">⚡ Real-time webhook delivery enabled</p>
-          <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
+          <p><strong>Events:</strong> ${safeEvents}</p>
           <p class="success-note">You can close this window and return to Towns.</p>
         </div>
       </body>
@@ -222,7 +222,7 @@ function renderPollingSuccess(
   sub: Extract<SubscribeResult, { deliveryMode: "polling" }>
 ) {
   const safeRepo = escapeHtml(sub.repoFullName);
-  const safeEvents = escapeHtml(sub.eventTypes);
+  const safeEvents = escapeHtml(sub.eventTypes.join(", "));
   const safeInstallUrl = escapeHtml(sub.installUrl);
 
   return c.html(`
@@ -241,7 +241,7 @@ function renderPollingSuccess(
           </div>
           <h1>✅ Subscribed to ${safeRepo}!</h1>
           <p class="delivery-mode">⏱️ Currently using 5-minute polling</p>
-          <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
+          <p><strong>Events:</strong> ${safeEvents}</p>
           <div class="install-section">
             <p>💡 <strong>Want real-time updates?</strong></p>
             <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>

@@ -1,8 +1,15 @@
+/** Default event types as array for code layer */
+export const DEFAULT_EVENT_TYPES_ARRAY: readonly EventType[] = [
+  "pr",
+  "issues",
+  "commits",
+  "releases",
+];
+
 /**
- * Default event types for GitHub subscriptions
- * This constant is imported and used across the codebase to ensure consistency
+ * Default event types for GitHub subscriptions (string for DB storage)
  */
-export const DEFAULT_EVENT_TYPES = "pr,issues,commits,releases";
+export const DEFAULT_EVENT_TYPES = DEFAULT_EVENT_TYPES_ARRAY.join(",");
 
 /**
  * Allowed event types that users can subscribe to
@@ -25,6 +32,11 @@ export const ALLOWED_EVENT_TYPES = [
  * Event type union extracted from ALLOWED_EVENT_TYPES
  */
 export type EventType = (typeof ALLOWED_EVENT_TYPES)[number];
+
+/** Pre-allocated Set for O(1) event type validation */
+export const ALLOWED_EVENT_TYPES_SET: ReadonlySet<EventType> = new Set(
+  ALLOWED_EVENT_TYPES
+);
 
 /**
  * Pending message cleanup interval (30 seconds)

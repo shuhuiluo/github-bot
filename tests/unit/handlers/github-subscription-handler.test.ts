@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   ALLOWED_EVENT_TYPES,
   DEFAULT_EVENT_TYPES,
+  type EventType,
 } from "../../../src/constants";
 import { handleGithubSubscription } from "../../../src/handlers/github-subscription-handler";
 import { TokenStatus } from "../../../src/services/github-oauth-service";
@@ -121,7 +122,11 @@ describe("github subscription handler", () => {
     test("should handle case-insensitive actions - status", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
         Promise.resolve([
-          { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
+          {
+            repo: "owner/repo",
+            eventTypes: DEFAULT_EVENT_TYPES.split(",") as EventType[],
+            deliveryMode: "webhook",
+          },
         ])
       );
 
@@ -193,7 +198,7 @@ describe("github subscription handler", () => {
         spaceId: "test-space",
         channelId: "test-channel",
         repoIdentifier: "facebook/react",
-        eventTypes: DEFAULT_EVENT_TYPES,
+        eventTypes: DEFAULT_EVENT_TYPES.split(","),
       });
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
@@ -211,7 +216,7 @@ describe("github subscription handler", () => {
       );
 
       const createCalls = mockSubscriptionService.createSubscription.mock.calls;
-      expect(createCalls[0][0].eventTypes).toBe("pr,ci");
+      expect(createCalls[0][0].eventTypes).toEqual(["pr", "ci"]);
     });
 
     test("should handle --events=all flag", async () => {
@@ -225,7 +230,7 @@ describe("github subscription handler", () => {
       );
 
       const createCalls = mockSubscriptionService.createSubscription.mock.calls;
-      expect(createCalls[0][0].eventTypes).toBe(ALLOWED_EVENT_TYPES.join(","));
+      expect(createCalls[0][0].eventTypes).toEqual([...ALLOWED_EVENT_TYPES]);
     });
 
     test("should reject invalid event types", async () => {
@@ -564,12 +569,12 @@ describe("github subscription handler", () => {
         Promise.resolve([
           {
             repo: "owner/repo1",
-            eventTypes: DEFAULT_EVENT_TYPES,
+            eventTypes: DEFAULT_EVENT_TYPES.split(",") as EventType[],
             deliveryMode: "webhook",
           },
           {
             repo: "owner/repo2",
-            eventTypes: "pr,ci",
+            eventTypes: ["pr", "ci"] as EventType[],
             deliveryMode: "polling",
           },
         ])

@@ -13,6 +13,7 @@ import {
   PENDING_MESSAGE_MAX_AGE_MS,
   PENDING_SUBSCRIPTION_CLEANUP_INTERVAL_MS,
   PENDING_SUBSCRIPTION_EXPIRATION_MS,
+  type EventType,
 } from "../constants";
 import { db } from "../db";
 import { githubSubscriptions, pendingSubscriptions } from "../db/schema";
@@ -31,7 +32,7 @@ export interface SubscribeParams {
   spaceId: string;
   channelId: string;
   repoIdentifier: string; // Format: "owner/repo"
-  eventTypes?: string;
+  eventTypes: EventType[];
 }
 
 /**
@@ -44,13 +45,13 @@ type SubscribeSuccess =
       success: true;
       deliveryMode: "webhook";
       repoFullName: string;
-      eventTypes: string;
+      eventTypes: EventType[];
     }
   | {
       success: true;
       deliveryMode: "polling";
       repoFullName: string;
-      eventTypes: string;
+      eventTypes: EventType[];
       installUrl: string;
     };
 
@@ -61,7 +62,7 @@ type SubscribeFailure =
       requiresInstallation: true;
       installUrl: string;
       repoFullName: string;
-      eventTypes: string;
+      eventTypes: EventType[];
       error: string;
     };
 
@@ -105,9 +106,6 @@ export class SubscriptionService {
   async createSubscription(params: SubscribeParams): Promise<SubscribeResult> {
     const { townsUserId, spaceId, channelId, repoIdentifier, eventTypes } =
       params;
-
-    // Normalize event types once to avoid duplication
-    const requestedEventTypes = eventTypes || DEFAULT_EVENT_TYPES;
 
     // Parse owner/repo
     const [owner, repo] = repoIdentifier.split("/");
@@ -160,23 +158,14 @@ export class SubscriptionService {
         // Get owner ID from public profile for installation URL
         const ownerId = await getOwnerIdFromUsername(owner);
 
-        // Store pending subscription for completion after installation
-        await this.storePendingSubscription({
+        return this.requiresInstallationFailure({
           townsUserId,
           spaceId,
           channelId,
           repoFullName: repoIdentifier,
-          eventTypes: requestedEventTypes,
+          eventTypes,
+          ownerId,
         });
-
-        return {
-          success: false,
-          requiresInstallation: true,
-          installUrl: generateInstallUrl(ownerId),
-          repoFullName: repoIdentifier,
-          eventTypes: requestedEventTypes,
-          error: `Repository not found or you don't have access.`,
-        };
       }
 
       // Check if this might be an org approval issue
@@ -207,23 +196,14 @@ export class SubscriptionService {
     if (repoInfo.isPrivate) {
       // Private repos MUST have GitHub App installed
       if (!installationId) {
-        // Store pending subscription for completion after installation
-        await this.storePendingSubscription({
+        return this.requiresInstallationFailure({
           townsUserId,
           spaceId,
           channelId,
           repoFullName: repoInfo.fullName,
-          eventTypes: requestedEventTypes,
+          eventTypes,
+          ownerId: repoInfo.owner.id,
         });
-
-        return {
-          success: false,
-          requiresInstallation: true,
-          installUrl: generateInstallUrl(repoInfo.owner.id),
-          repoFullName: repoInfo.fullName,
-          eventTypes: requestedEventTypes,
-          error: `Private repository requires GitHub App installation`,
-        };
       }
 
       deliveryMode = "webhook";
@@ -265,7 +245,7 @@ export class SubscriptionService {
       createdByGithubLogin: githubUser.login,
       installationId,
       enabled: true,
-      eventTypes: requestedEventTypes,
+      eventTypes: eventTypes.join(","),
       createdAt: now,
       updatedAt: now,
     });
@@ -275,7 +255,7 @@ export class SubscriptionService {
         success: true,
         deliveryMode: "polling",
         repoFullName: repoInfo.fullName,
-        eventTypes: requestedEventTypes,
+        eventTypes,
         installUrl: generateInstallUrl(repoInfo.owner.id),
       };
     } else {
@@ -283,9 +263,38 @@ export class SubscriptionService {
         success: true,
         deliveryMode: "webhook",
         repoFullName: repoInfo.fullName,
-        eventTypes: requestedEventTypes,
+        eventTypes,
       };
     }
+  }
+
+  /**
+   * Store pending subscription and return failure requiring installation
+   */
+  private async requiresInstallationFailure(params: {
+    townsUserId: string;
+    spaceId: string;
+    channelId: string;
+    repoFullName: string;
+    eventTypes: EventType[];
+    ownerId?: number;
+  }): Promise<SubscribeFailure> {
+    await this.storePendingSubscription({
+      townsUserId: params.townsUserId,
+      spaceId: params.spaceId,
+      channelId: params.channelId,
+      repoFullName: params.repoFullName,
+      eventTypes: params.eventTypes,
+    });
+
+    return {
+      success: false,
+      requiresInstallation: true,
+      installUrl: generateInstallUrl(params.ownerId),
+      repoFullName: params.repoFullName,
+      eventTypes: params.eventTypes,
+      error: "Private repository requires GitHub App installation",
+    };
   }
 
   /**
@@ -297,7 +306,7 @@ export class SubscriptionService {
     spaceId: string;
     channelId: string;
     repoFullName: string;
-    eventTypes: string;
+    eventTypes: EventType[];
   }): Promise<void> {
     const now = new Date();
     const expiresAt = new Date(
@@ -311,7 +320,7 @@ export class SubscriptionService {
         spaceId: params.spaceId,
         channelId: params.channelId,
         repoFullName: params.repoFullName,
-        eventTypes: params.eventTypes,
+        eventTypes: params.eventTypes.join(","),
         createdAt: now,
         expiresAt,
       })
@@ -360,7 +369,7 @@ export class SubscriptionService {
           spaceId: sub.spaceId,
           channelId: sub.channelId,
           repoIdentifier: repoFullName,
-          eventTypes: sub.eventTypes,
+          eventTypes: sub.eventTypes.split(",") as EventType[],
         });
 
         if (result.success && this.bot) {
@@ -419,7 +428,7 @@ export class SubscriptionService {
     channelId: string,
     spaceId: string
   ): Promise<
-    Array<{ repo: string; eventTypes: string; deliveryMode: string }>
+    Array<{ repo: string; eventTypes: EventType[]; deliveryMode: string }>
   > {
     const results = await db
       .select({
@@ -437,7 +446,9 @@ export class SubscriptionService {
 
     return results.map(r => ({
       repo: r.repo,
-      eventTypes: r.eventTypes || DEFAULT_EVENT_TYPES,
+      eventTypes: (r.eventTypes || DEFAULT_EVENT_TYPES).split(
+        ","
+      ) as EventType[],
       deliveryMode: r.deliveryMode,
     }));
   }
@@ -453,7 +464,7 @@ export class SubscriptionService {
   async getRepoSubscribers(
     repoFullName: string,
     deliveryMode?: "webhook" | "polling"
-  ): Promise<Array<{ channelId: string; eventTypes: string }>> {
+  ): Promise<Array<{ channelId: string; eventTypes: EventType[] }>> {
     const conditions = [eq(githubSubscriptions.repoFullName, repoFullName)];
 
     if (deliveryMode) {
@@ -470,7 +481,9 @@ export class SubscriptionService {
 
     return results.map(r => ({
       channelId: r.channelId,
-      eventTypes: r.eventTypes || DEFAULT_EVENT_TYPES,
+      eventTypes: (r.eventTypes || DEFAULT_EVENT_TYPES).split(
+        ","
+      ) as EventType[],
     }));
   }
 

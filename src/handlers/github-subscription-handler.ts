@@ -1,6 +1,12 @@
 import type { BotHandler } from "@towns-protocol/bot";
 
-import { ALLOWED_EVENT_TYPES, DEFAULT_EVENT_TYPES } from "../constants";
+import {
+  ALLOWED_EVENT_TYPES,
+  ALLOWED_EVENT_TYPES_SET,
+  DEFAULT_EVENT_TYPES,
+  DEFAULT_EVENT_TYPES_ARRAY,
+  type EventType,
+} from "../constants";
 import {
   TokenStatus,
   type GitHubOAuthService,
@@ -91,7 +97,7 @@ async function handleSubscribe(
   }
 
   // Parse and validate event types from args
-  let eventTypes: string;
+  let eventTypes: EventType[];
   try {
     eventTypes = parseEventTypes(args);
   } catch (error) {
@@ -318,12 +324,12 @@ async function handleStatus(
 
 /**
  * Parse and validate event types from --events flag
- * Returns default types if no flag, or comma-separated validated event types
+ * Returns default types if no flag, or validated event types array
  * @throws Error if any event type is invalid
  */
-function parseEventTypes(args: string[]): string {
+function parseEventTypes(args: string[]): EventType[] {
   const eventsIndex = args.findIndex(arg => arg.startsWith("--events"));
-  if (eventsIndex === -1) return DEFAULT_EVENT_TYPES;
+  if (eventsIndex === -1) return [...DEFAULT_EVENT_TYPES_ARRAY];
 
   let rawEventTypes: string;
 
@@ -334,7 +340,7 @@ function parseEventTypes(args: string[]): string {
     // Check for --events pr,issues format (next arg)
     rawEventTypes = args[eventsIndex + 1];
   } else {
-    return DEFAULT_EVENT_TYPES;
+    return [...DEFAULT_EVENT_TYPES_ARRAY];
   }
 
   // Parse and validate event types
@@ -345,14 +351,13 @@ function parseEventTypes(args: string[]): string {
 
   // Handle "all" as special case
   if (tokens.includes("all")) {
-    return ALLOWED_EVENT_TYPES.join(",");
+    return [...ALLOWED_EVENT_TYPES];
   }
 
   // Validate each token
   const invalidTokens: string[] = [];
-  const allowedSet = new Set(ALLOWED_EVENT_TYPES);
   for (const token of tokens) {
-    if (!allowedSet.has(token as (typeof ALLOWED_EVENT_TYPES)[number])) {
+    if (!ALLOWED_EVENT_TYPES_SET.has(token as EventType)) {
       invalidTokens.push(token);
     }
   }
@@ -366,17 +371,13 @@ function parseEventTypes(args: string[]): string {
     );
   }
 
-  // Remove duplicates using Set and return
-  const uniqueTokens = Array.from(new Set(tokens));
-  return uniqueTokens.join(",");
+  // Remove duplicates and return
+  return [...new Set(tokens)] as EventType[];
 }
 
 /**
  * Format event types for display
  */
-function formatEventTypes(eventTypes: string): string {
-  return eventTypes
-    .split(",")
-    .map(t => t.trim())
-    .join(", ");
+function formatEventTypes(eventTypes: EventType[]): string {
+  return eventTypes.join(", ");
 }

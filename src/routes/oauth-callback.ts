@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 
 import { getOwnerIdFromUsername, parseRepo } from "../api/github-client";
-import { DEFAULT_EVENT_TYPES } from "../constants";
+import { DEFAULT_EVENT_TYPES_ARRAY } from "../constants";
 import {
   generateInstallUrl,
   type InstallationService,
@@ -70,7 +70,9 @@ export async function handleOAuthCallback(
           spaceId: result.spaceId,
           channelId: result.channelId,
           repoIdentifier: result.redirectData.repo,
-          eventTypes: result.redirectData.eventTypes || DEFAULT_EVENT_TYPES,
+          eventTypes: result.redirectData.eventTypes ?? [
+            ...DEFAULT_EVENT_TYPES_ARRAY,
+          ],
         });
 
         if (subResult.success) {
