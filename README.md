@@ -213,7 +213,6 @@ All webhook events above, plus:
 - **No interactive actions** - Towns Protocol doesn't support buttons/forms yet
 - **No threaded conversations** - All notifications sent as top-level messages
 - **5-minute polling delay** - Without GitHub App, events have 5-minute latency
-- **OAuth token expiration** - Users may need to reauthorize periodically (token refresh not yet implemented)
 
 ## Future Enhancements
 
@@ -224,18 +223,13 @@ All webhook events above, plus:
 - [x] Improved subscription UX - Single OAuth flow with immediate subscription creation
 - [x] Enhanced OAuth success page - Installation countdown and auto-redirect
 - [x] Pending subscriptions for private repos - Auto-complete when GitHub App is installed
-
-### Priority
-
-- [ ] OAuth token renewal - Automatically refresh expired tokens instead of prompting reauthorization
-
-### Subscription & UX
-
-- [ ] Granular unsubscribe - Unsubscribe from specific event types without removing entire repo subscription
-- [ ] Subscription management - Update event filters for existing subscriptions
+- [x] OAuth token renewal - Automatic refresh with 5-minute buffer before expiration
+- [x] Granular unsubscribe - `/github unsubscribe owner/repo --events pr,issues`
+- [x] Subscription management - `/github subscribe owner/repo --events releases` adds to existing
 
 ### Event Organization
 
+- [ ] Branch-specific filtering - `--branches main,release/*` to filter commits, CI, PRs by branch
 - [ ] Thread-based event grouping - Group related events (PR + commits + CI) in threads to reduce channel noise
 - [ ] Event summaries - Digest multiple events into single update message
 
