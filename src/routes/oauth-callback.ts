@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 
 import { getOwnerIdFromUsername, parseRepo } from "../api/github-client";
-import { DEFAULT_EVENT_TYPES_ARRAY } from "../constants";
+import { DEFAULT_EVENT_TYPES_ARRAY, type EventType } from "../constants";
 import {
   generateInstallUrl,
   type InstallationService,
@@ -62,35 +62,26 @@ export async function handleOAuthCallback(
     // If there was a redirect action (e.g., subscribe), complete the subscription
     if (redirectAction === "subscribe" && redirectData) {
       if (redirectData.repo && spaceId && townsUserId) {
+        const eventTypes: EventType[] = redirectData.eventTypes ?? [
+          ...DEFAULT_EVENT_TYPES_ARRAY,
+        ];
+
         // Attempt subscription now that OAuth is complete
         const subResult = await subscriptionService.createSubscription({
           townsUserId,
           spaceId,
           channelId,
           repoIdentifier: redirectData.repo,
-          eventTypes: redirectData.eventTypes ?? [...DEFAULT_EVENT_TYPES_ARRAY],
+          eventTypes,
         });
 
         if (subResult.success) {
-          // Success - notify in Towns
-          const deliveryInfo =
-            subResult.deliveryMode === "webhook"
-              ? "⚡ Real-time webhook delivery enabled!"
-              : `⏱️ Events checked every 5 minutes\n\n💡 [Install the GitHub App](<${subResult.installUrl}>) for real-time delivery`;
-
-          const { eventId } = await bot.sendMessage(
+          await subscriptionService.sendSubscriptionSuccess(
+            subResult,
+            eventTypes,
             channelId,
-            `✅ **Subscribed to [${subResult.repoFullName}](https://github.com/${subResult.repoFullName})**\n\n${deliveryInfo}`
+            bot
           );
-
-          // Track polling messages for potential upgrade to webhook
-          if (subResult.deliveryMode === "polling" && eventId) {
-            subscriptionService.registerPendingMessage(
-              channelId,
-              subResult.repoFullName,
-              eventId
-            );
-          }
 
           // Return success page with subscription data
           return renderSuccess(c, {
@@ -112,6 +103,73 @@ export async function handleOAuthCallback(
             subscriptionResult: subResult,
           });
         }
+      }
+    }
+
+    // Handle subscription update (add event types to existing subscription)
+    if (redirectAction === "subscribe-update" && redirectData) {
+      if (redirectData.repo && spaceId && townsUserId) {
+        const eventTypes: EventType[] = redirectData.eventTypes ?? [
+          ...DEFAULT_EVENT_TYPES_ARRAY,
+        ];
+
+        const updateResult = await subscriptionService.addEventTypes(
+          townsUserId,
+          spaceId,
+          channelId,
+          redirectData.repo,
+          eventTypes
+        );
+
+        if (updateResult.success) {
+          await bot.sendMessage(
+            channelId,
+            `✅ **Updated subscription to ${redirectData.repo}**\n\n` +
+              `Event types: **${updateResult.eventTypes!.join(", ")}**`
+          );
+        } else {
+          await bot.sendMessage(channelId, `❌ ${updateResult.error}`);
+        }
+
+        // Show basic success page (user should return to Towns)
+        return renderSuccess(c);
+      }
+    }
+
+    // Handle unsubscribe update (remove event types from existing subscription)
+    if (redirectAction === "unsubscribe-update" && redirectData) {
+      if (
+        redirectData.repo &&
+        spaceId &&
+        townsUserId &&
+        redirectData.eventTypes
+      ) {
+        const removeResult = await subscriptionService.removeEventTypes(
+          townsUserId,
+          spaceId,
+          channelId,
+          redirectData.repo,
+          redirectData.eventTypes
+        );
+
+        if (removeResult.success) {
+          if (removeResult.deleted) {
+            await bot.sendMessage(
+              channelId,
+              `✅ **Unsubscribed from ${redirectData.repo}**`
+            );
+          } else {
+            await bot.sendMessage(
+              channelId,
+              `✅ **Updated subscription to ${redirectData.repo}**\n\n` +
+                `Remaining event types: **${removeResult.eventTypes!.join(", ")}**`
+            );
+          }
+        } else {
+          await bot.sendMessage(channelId, `❌ ${removeResult.error}`);
+        }
+
+        return renderSuccess(c);
       }
     }
 

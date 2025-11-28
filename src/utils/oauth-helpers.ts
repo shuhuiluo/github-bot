@@ -1,6 +1,10 @@
 import type { BotHandler } from "@towns-protocol/bot";
 
-import type { GitHubOAuthService } from "../services/github-oauth-service";
+import { EventType } from "../constants";
+import {
+  GitHubOAuthService,
+  TokenStatus,
+} from "../services/github-oauth-service";
 import type { RedirectAction, RedirectData } from "../types/oauth";
 
 /**
@@ -102,5 +106,73 @@ export async function sendEditableOAuthPrompt(
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
+  }
+}
+
+/**
+ * Handle invalid OAuth token status by showing appropriate prompt
+ */
+export async function handleInvalidOAuthToken(
+  tokenStatus: Exclude<TokenStatus, TokenStatus.Valid>,
+  oauthService: GitHubOAuthService,
+  handler: BotHandler,
+  userId: string,
+  channelId: string,
+  spaceId: string,
+  redirectAction: RedirectAction,
+  redirectData: { repo: string; eventTypes: EventType[] }
+): Promise<void> {
+  switch (tokenStatus) {
+    case TokenStatus.NotLinked:
+      await sendEditableOAuthPrompt(
+        oauthService,
+        handler,
+        userId,
+        channelId,
+        spaceId,
+        `🔐 **GitHub Account Required**\n\n` +
+          `To modify subscriptions, you need to connect your GitHub account.\n\n` +
+          `[Connect GitHub Account]({authUrl})`,
+        redirectAction,
+        redirectData
+      );
+      return;
+
+    case TokenStatus.Invalid:
+      await sendEditableOAuthPrompt(
+        oauthService,
+        handler,
+        userId,
+        channelId,
+        spaceId,
+        `⚠️ **GitHub Token Expired**\n\n` +
+          `Your GitHub token has expired or been revoked. Please reconnect your account.\n\n` +
+          `[Reconnect GitHub Account]({authUrl})`,
+        redirectAction,
+        redirectData
+      );
+      return;
+
+    case TokenStatus.Unknown: {
+      const authUrl = await oauthService.getAuthorizationUrl(
+        userId,
+        channelId,
+        spaceId,
+        redirectAction,
+        redirectData
+      );
+      await handler.sendMessage(
+        channelId,
+        `⚠️ **Unable to Verify GitHub Connection**\n\n` +
+          `We couldn't verify your GitHub token. This could be temporary (rate limiting) or indicate a connection issue.\n\n` +
+          `Please try again in a few moments, or [reconnect your account](${authUrl}) if the problem persists.`
+      );
+      return;
+    }
+
+    default: {
+      const _exhaustive: never = tokenStatus;
+      console.error("Unhandled token status:", _exhaustive);
+    }
   }
 }

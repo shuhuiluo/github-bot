@@ -13,7 +13,7 @@ import {
 } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";
-import { sendEditableOAuthPrompt } from "../utils/oauth-helpers";
+import { handleInvalidOAuthToken } from "../utils/oauth-helpers";
 import { stripMarkdown } from "../utils/stripper";
 
 export async function handleGithubSubscription(
@@ -29,8 +29,8 @@ export async function handleGithubSubscription(
     await handler.sendMessage(
       channelId,
       "**Usage:**\n\n" +
-        `- \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\` - Subscribe to GitHub events\n\n` +
-        "- `/github unsubscribe owner/repo` - Unsubscribe from a repository\n\n" +
+        `- \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\` - Subscribe to GitHub events or add event types\n\n` +
+        "- `/github unsubscribe owner/repo [--events type1,type2]` - Unsubscribe from a repository or remove specific event types\n\n" +
         "- `/github status` - Show current subscriptions"
     );
     return;
@@ -47,7 +47,13 @@ export async function handleGithubSubscription(
       );
       break;
     case "unsubscribe":
-      await handleUnsubscribe(handler, event, subscriptionService, repoArg);
+      await handleUnsubscribe(
+        handler,
+        event,
+        subscriptionService,
+        oauthService,
+        repoArg
+      );
       break;
     case "status":
       await handleStatus(handler, event, subscriptionService);
@@ -74,7 +80,7 @@ async function handleSubscribe(
   oauthService: GitHubOAuthService,
   repoArg: string | undefined
 ): Promise<void> {
-  const { channelId, spaceId, userId, args } = event;
+  const { channelId, spaceId, args } = event;
 
   if (!repoArg) {
     await handler.sendMessage(
@@ -84,17 +90,16 @@ async function handleSubscribe(
     return;
   }
 
-  // Strip markdown formatting from repo name
-  const repo = stripMarkdown(repoArg);
-
-  // Validate repo format
-  if (!repo.includes("/") || repo.split("/").length !== 2) {
+  const repo = parseRepoArg(repoArg);
+  if (!repo) {
     await handler.sendMessage(
       channelId,
       "❌ Invalid format. Use: `owner/repo` (e.g., `facebook/react`)"
     );
     return;
   }
+
+  const hasEventsFlag = args.some(arg => arg.startsWith("--events"));
 
   // Parse and validate event types from args
   let eventTypes: EventType[];
@@ -107,69 +112,74 @@ async function handleSubscribe(
     return;
   }
 
+  // Check if already subscribed - if so, add event types instead (case-insensitive match)
+  const channelSubscriptions =
+    await subscriptionService.getChannelSubscriptions(channelId, spaceId);
+  const existingSubscription = channelSubscriptions.find(
+    sub => sub.repo.toLowerCase() === repo.toLowerCase()
+  );
+
+  if (existingSubscription && hasEventsFlag) {
+    return handleUpdateSubscription(
+      handler,
+      event,
+      subscriptionService,
+      oauthService,
+      existingSubscription,
+      eventTypes
+    );
+  }
+
+  if (existingSubscription) {
+    await handler.sendMessage(
+      channelId,
+      `❌ Already subscribed to **${existingSubscription.repo}**\n\n` +
+        "Use `--events` to add specific event types, or `/github status` to view current settings."
+    );
+    return;
+  }
+
+  return handleNewSubscription(
+    handler,
+    event,
+    subscriptionService,
+    oauthService,
+    repo,
+    eventTypes
+  );
+}
+
+/**
+ * Handle new subscription (no existing subscription for this repo)
+ */
+async function handleNewSubscription(
+  handler: BotHandler,
+  event: SlashCommandEvent,
+  subscriptionService: SubscriptionService,
+  oauthService: GitHubOAuthService,
+  repo: string,
+  eventTypes: EventType[]
+): Promise<void> {
+  const { channelId, spaceId, userId } = event;
+
   // Check if user has linked their GitHub account and token is valid
   const tokenStatus = await oauthService.validateToken(userId);
 
   if (tokenStatus !== TokenStatus.Valid) {
-    switch (tokenStatus) {
-      case TokenStatus.NotLinked:
-        // Use two-phase pattern for editable OAuth prompts
-        await sendEditableOAuthPrompt(
-          oauthService,
-          handler,
-          userId,
-          channelId,
-          spaceId,
-          `🔐 **GitHub Account Required**\n\n` +
-            `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
-            `[Connect GitHub Account]({authUrl})`,
-          "subscribe",
-          { repo, eventTypes }
-        );
-        return;
-
-      case TokenStatus.Invalid:
-        await sendEditableOAuthPrompt(
-          oauthService,
-          handler,
-          userId,
-          channelId,
-          spaceId,
-          `⚠️ **GitHub Token Expired**\n\n` +
-            `Your GitHub token has expired or been revoked. Please reconnect your account.\n\n` +
-            `[Reconnect GitHub Account]({authUrl})`,
-          "subscribe",
-          { repo, eventTypes }
-        );
-        return;
-
-      case TokenStatus.Unknown: {
-        // Generate auth URL for Unknown status (not using two-phase pattern as this is less common)
-        const authUrl = await oauthService.getAuthorizationUrl(
-          userId,
-          channelId,
-          spaceId,
-          "subscribe",
-          { repo, eventTypes }
-        );
-        await handler.sendMessage(
-          channelId,
-          `⚠️ **Unable to Verify GitHub Connection**\n\n` +
-            `We couldn't verify your GitHub token. This could be temporary (rate limiting) or indicate a connection issue.\n\n` +
-            `Please try again in a few moments, or [reconnect your account](${authUrl}) if the problem persists.`
-        );
-        return;
-      }
-
-      default: {
-        // TypeScript exhaustiveness check
-        const _exhaustive: never = tokenStatus;
-        return _exhaustive;
-      }
-    }
+    await handleInvalidOAuthToken(
+      tokenStatus,
+      oauthService,
+      handler,
+      userId,
+      channelId,
+      spaceId,
+      "subscribe",
+      { repo, eventTypes }
+    );
+    return;
   }
 
-  // Create subscription (OAuth check already done)
+  // Create subscription
   const result = await subscriptionService.createSubscription({
     townsUserId: userId,
     spaceId,
@@ -178,7 +188,6 @@ async function handleSubscribe(
     eventTypes,
   });
 
-  // Handle installation requirement (private repos)
   if (!result.success && result.requiresInstallation) {
     await handler.sendMessage(
       channelId,
@@ -190,25 +199,69 @@ async function handleSubscribe(
     return;
   }
 
-  // Handle other errors
   if (!result.success) {
     await handler.sendMessage(channelId, `❌ ${result.error}`);
     return;
   }
 
-  // Success - format response
-  const eventTypeDisplay = formatEventTypes(eventTypes);
-  const deliveryInfo =
-    result.deliveryMode === "webhook"
-      ? "⚡ Real-time webhook delivery enabled!"
-      : "⏱️ Events are checked every 5 minutes (polling mode)\n\n" +
-        `💡 **Want real-time notifications?** [Install the GitHub App](${result.installUrl})`;
+  await subscriptionService.sendSubscriptionSuccess(
+    result,
+    eventTypes,
+    channelId,
+    handler
+  );
+}
 
+/**
+ * Handle update to existing subscription (add event types)
+ */
+async function handleUpdateSubscription(
+  handler: BotHandler,
+  event: SlashCommandEvent,
+  subscriptionService: SubscriptionService,
+  oauthService: GitHubOAuthService,
+  existingSubscription: { repo: string; deliveryMode: string },
+  eventTypes: EventType[]
+): Promise<void> {
+  const { channelId, spaceId, userId } = event;
+  const { repo } = existingSubscription;
+
+  // Check if user has linked their GitHub account and token is valid
+  const tokenStatus = await oauthService.validateToken(userId);
+
+  if (tokenStatus !== TokenStatus.Valid) {
+    await handleInvalidOAuthToken(
+      tokenStatus,
+      oauthService,
+      handler,
+      userId,
+      channelId,
+      spaceId,
+      "subscribe-update",
+      { repo, eventTypes }
+    );
+    return;
+  }
+
+  // Add event types to existing subscription (validates repo access)
+  const addResult = await subscriptionService.addEventTypes(
+    userId,
+    spaceId,
+    channelId,
+    repo,
+    eventTypes
+  );
+
+  if (!addResult.success) {
+    await handler.sendMessage(channelId, `❌ ${addResult.error}`);
+    return;
+  }
+
+  const mode = existingSubscription.deliveryMode === "webhook" ? "⚡" : "⏱️";
   await handler.sendMessage(
     channelId,
-    `✅ **Subscribed to [${result.repoFullName}](https://github.com/${result.repoFullName})**\n\n` +
-      `📡 Event types: **${eventTypeDisplay}**\n\n` +
-      `${deliveryInfo}`
+    `✅ **Updated subscription to ${repo}**\n\n` +
+      `${mode} Event types: **${formatEventTypes(addResult.eventTypes!)}**`
   );
 }
 
@@ -219,23 +272,21 @@ async function handleUnsubscribe(
   handler: BotHandler,
   event: SlashCommandEvent,
   subscriptionService: SubscriptionService,
+  oauthService: GitHubOAuthService,
   repoArg: string | undefined
 ): Promise<void> {
-  const { channelId, spaceId } = event;
+  const { channelId, spaceId, args } = event;
 
   if (!repoArg) {
     await handler.sendMessage(
       channelId,
-      "❌ Usage: `/github unsubscribe owner/repo`"
+      "❌ Usage: `/github unsubscribe owner/repo [--events type1,type2]`"
     );
     return;
   }
 
-  // Strip markdown formatting from repo name
-  const repo = stripMarkdown(repoArg);
-
-  // Validate repo format
-  if (!repo.includes("/") || repo.split("/").length !== 2) {
+  const repo = parseRepoArg(repoArg);
+  if (!repo) {
     await handler.sendMessage(
       channelId,
       "❌ Invalid format. Use: `owner/repo` (e.g., `facebook/react`)"
@@ -269,21 +320,184 @@ async function handleUnsubscribe(
     return;
   }
 
-  // Remove subscription using canonical repo name from the DB
-  const success = await subscriptionService.unsubscribe(
-    channelId,
-    spaceId,
-    subscription.repo
-  );
+  // Check for --events flag for granular unsubscribe
+  const eventsIndex = args.findIndex(arg => arg.startsWith("--events"));
 
-  if (success) {
-    await handler.sendMessage(channelId, `✅ **Unsubscribed from ${repo}**`);
-  } else {
-    await handler.sendMessage(
-      channelId,
-      `❌ Failed to unsubscribe from **${repo}**`
+  if (eventsIndex !== -1) {
+    return handleRemoveEventTypes(
+      handler,
+      event,
+      subscriptionService,
+      oauthService,
+      subscription.repo,
+      subscription.eventTypes,
+      eventsIndex
     );
   }
+
+  // Full unsubscribe
+  return handleFullUnsubscribe(
+    handler,
+    event,
+    subscriptionService,
+    oauthService,
+    subscription.repo,
+    subscription.eventTypes
+  );
+}
+
+/**
+ * Handle removing specific event types from a subscription
+ */
+async function handleRemoveEventTypes(
+  handler: BotHandler,
+  event: SlashCommandEvent,
+  subscriptionService: SubscriptionService,
+  oauthService: GitHubOAuthService,
+  repo: string,
+  eventTypes: EventType[],
+  eventsIndex: number
+): Promise<void> {
+  const { channelId, spaceId, userId, args } = event;
+
+  // Parse event types
+  let eventTypesToRemove = "";
+  if (args[eventsIndex].includes("=")) {
+    eventTypesToRemove = args[eventsIndex].split("=")[1] || "";
+  } else if (eventsIndex + 1 < args.length) {
+    eventTypesToRemove = args[eventsIndex + 1];
+  }
+
+  const typesToRemove = eventTypesToRemove
+    .split(",")
+    .map(t => t.trim().toLowerCase())
+    .filter(t => t.length > 0);
+
+  if (typesToRemove.length === 0) {
+    await handler.sendMessage(
+      channelId,
+      "❌ Please specify event types to remove: `--events pr,issues`"
+    );
+    return;
+  }
+
+  // Validate event types
+  const allowedSet = new Set(ALLOWED_EVENT_TYPES);
+  const invalidTypes = typesToRemove.filter(
+    t => !allowedSet.has(t as (typeof ALLOWED_EVENT_TYPES)[number])
+  );
+  if (invalidTypes.length > 0) {
+    await handler.sendMessage(
+      channelId,
+      `❌ Invalid event type(s): ${invalidTypes.join(", ")}\n\n` +
+        `Valid options: ${ALLOWED_EVENT_TYPES.join(", ")}`
+    );
+    return;
+  }
+
+  // Check if user has linked their GitHub account and token is valid
+  const tokenStatus = await oauthService.validateToken(userId);
+
+  if (tokenStatus !== TokenStatus.Valid) {
+    await handleInvalidOAuthToken(
+      tokenStatus,
+      oauthService,
+      handler,
+      userId,
+      channelId,
+      spaceId,
+      "unsubscribe-update",
+      { repo, eventTypes: typesToRemove as EventType[] }
+    );
+    return;
+  }
+
+  // Compute actually removed types (intersection with current subscription)
+  const actuallyRemoved = eventTypes.filter(t =>
+    (typesToRemove as EventType[]).includes(t)
+  );
+
+  // Remove event types (validates repo access)
+  const removeResult = await subscriptionService.removeEventTypes(
+    userId,
+    spaceId,
+    channelId,
+    repo,
+    typesToRemove as EventType[]
+  );
+
+  if (!removeResult.success) {
+    await handler.sendMessage(channelId, `❌ ${removeResult.error}`);
+    return;
+  }
+
+  if (removeResult.deleted) {
+    await handler.sendMessage(
+      channelId,
+      `✅ **Unsubscribed from ${repo}**\n\n` + `All event types were removed.`
+    );
+  } else {
+    const removedLabel =
+      actuallyRemoved.length > 0 ? actuallyRemoved.join(", ") : "(none)";
+    const header =
+      actuallyRemoved.length > 0
+        ? `✅ **Updated subscription to ${repo}**\n\n`
+        : `ℹ️ **Subscription to ${repo} unchanged**\n\n`;
+
+    await handler.sendMessage(
+      channelId,
+      header +
+        `Removed: **${removedLabel}**\n` +
+        `Remaining: **${formatEventTypes(removeResult.eventTypes!)}**`
+    );
+  }
+}
+
+/**
+ * Handle full unsubscribe from a repository
+ */
+async function handleFullUnsubscribe(
+  handler: BotHandler,
+  event: SlashCommandEvent,
+  subscriptionService: SubscriptionService,
+  oauthService: GitHubOAuthService,
+  repo: string,
+  eventTypes: EventType[]
+): Promise<void> {
+  const { channelId, spaceId, userId } = event;
+
+  // Check if user has linked their GitHub account and token is valid
+  const tokenStatus = await oauthService.validateToken(userId);
+
+  if (tokenStatus !== TokenStatus.Valid) {
+    await handleInvalidOAuthToken(
+      tokenStatus,
+      oauthService,
+      handler,
+      userId,
+      channelId,
+      spaceId,
+      "unsubscribe-update",
+      { repo, eventTypes }
+    );
+    return;
+  }
+
+  // Use removeEventTypes with all event types - validates repo access and deletes subscription
+  const removeResult = await subscriptionService.removeEventTypes(
+    userId,
+    spaceId,
+    channelId,
+    repo,
+    eventTypes
+  );
+
+  if (!removeResult.success) {
+    await handler.sendMessage(channelId, `❌ ${removeResult.error}`);
+    return;
+  }
+
+  await handler.sendMessage(channelId, `✅ **Unsubscribed from ${repo}**`);
 }
 
 /**
@@ -320,6 +534,18 @@ async function handleStatus(
     `📬 **Subscribed Repositories (${subscriptions.length}):**\n\n${repoList}\n\n` +
       `⚡ Real-time  ⏱️ Polling (5 min)`
   );
+}
+
+/**
+ * Parse and validate repo argument (strips markdown, validates owner/repo format)
+ * Returns null if invalid format
+ */
+function parseRepoArg(repoArg: string): string | null {
+  const repo = stripMarkdown(repoArg);
+  if (!repo.includes("/") || repo.split("/").length !== 2) {
+    return null;
+  }
+  return repo;
 }
 
 /**

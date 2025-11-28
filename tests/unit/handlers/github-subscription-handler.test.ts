@@ -45,6 +45,11 @@ describe("github subscription handler", () => {
       ),
       getChannelSubscriptions: mock(() => Promise.resolve([])),
       unsubscribe: mock(() => Promise.resolve(true)),
+      removeEventTypes: mock(() =>
+        Promise.resolve({ success: true, deleted: true })
+      ),
+      registerPendingMessage: mock(() => {}),
+      sendSubscriptionSuccess: mock(() => Promise.resolve()),
     };
 
     // Mock OAuth service
@@ -96,9 +101,9 @@ describe("github subscription handler", () => {
         mockOAuthService
       );
 
-      expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
-      const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("✅ **Subscribed");
+      expect(
+        mockSubscriptionService.sendSubscriptionSuccess
+      ).toHaveBeenCalled();
     });
 
     test("should handle case-insensitive actions - unsubscribe", async () => {
@@ -201,8 +206,9 @@ describe("github subscription handler", () => {
         eventTypes: DEFAULT_EVENT_TYPES.split(","),
       });
 
-      const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("✅ **Subscribed");
+      expect(
+        mockSubscriptionService.sendSubscriptionSuccess
+      ).toHaveBeenCalled();
     });
 
     test("should handle custom event types with --events flag", async () => {
@@ -336,13 +342,15 @@ describe("github subscription handler", () => {
     });
 
     test("should handle polling mode delivery", async () => {
+      const pollingResult = {
+        success: true as const,
+        repoFullName: "owner/repo",
+        deliveryMode: "polling" as const,
+        installUrl: "https://github.com/apps/test/installations/new",
+        eventTypes: ["pr", "issues"] as const,
+      };
       mockSubscriptionService.createSubscription = mock(() =>
-        Promise.resolve({
-          success: true,
-          repoFullName: "owner/repo",
-          deliveryMode: "polling",
-          installUrl: "https://github.com/apps/test/installations/new",
-        })
+        Promise.resolve(pollingResult)
       );
 
       await handleGithubSubscription(
@@ -352,8 +360,15 @@ describe("github subscription handler", () => {
         mockOAuthService
       );
 
-      const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("⏱️ Events are checked every 5 minutes");
+      // Verify sendSubscriptionSuccess is called with correct args
+      expect(
+        mockSubscriptionService.sendSubscriptionSuccess
+      ).toHaveBeenCalledWith(
+        pollingResult,
+        expect.any(Array),
+        "test-channel",
+        mockHandler
+      );
     });
 
     test("should send info message when already subscribed", async () => {
@@ -463,11 +478,11 @@ describe("github subscription handler", () => {
 
     test("should successfully unsubscribe from repo", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([
-          { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
-        ])
+        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
       );
-      mockSubscriptionService.unsubscribe = mock(() => Promise.resolve(true));
+      mockSubscriptionService.removeEventTypes = mock(() =>
+        Promise.resolve({ success: true, deleted: true })
+      );
 
       await handleGithubSubscription(
         mockHandler,
@@ -476,12 +491,14 @@ describe("github subscription handler", () => {
         mockOAuthService
       );
 
-      const unsubCalls = mockSubscriptionService.unsubscribe.mock.calls;
-      expect(unsubCalls.length).toBe(1);
-      expect(unsubCalls[0]).toEqual([
-        "test-channel",
+      const removeCalls = mockSubscriptionService.removeEventTypes.mock.calls;
+      expect(removeCalls.length).toBe(1);
+      expect(removeCalls[0]).toEqual([
+        "0x123",
         "test-space",
+        "test-channel",
         "owner/repo",
+        ["pr", "issues"],
       ]);
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
@@ -490,11 +507,11 @@ describe("github subscription handler", () => {
 
     test("should handle case-insensitive repo names", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([
-          { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
-        ])
+        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
       );
-      mockSubscriptionService.unsubscribe = mock(() => Promise.resolve(true));
+      mockSubscriptionService.removeEventTypes = mock(() =>
+        Promise.resolve({ success: true, deleted: true })
+      );
 
       await handleGithubSubscription(
         mockHandler,
@@ -503,17 +520,17 @@ describe("github subscription handler", () => {
         mockOAuthService
       );
 
-      const unsubCalls = mockSubscriptionService.unsubscribe.mock.calls;
-      expect(unsubCalls[0][2]).toBe("owner/repo");
+      const removeCalls = mockSubscriptionService.removeEventTypes.mock.calls;
+      expect(removeCalls[0][3]).toBe("owner/repo");
     });
 
     test("should handle unsubscribe failure", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([
-          { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
-        ])
+        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
       );
-      mockSubscriptionService.unsubscribe = mock(() => Promise.resolve(false));
+      mockSubscriptionService.removeEventTypes = mock(() =>
+        Promise.resolve({ success: false, error: "You don't have access" })
+      );
 
       await handleGithubSubscription(
         mockHandler,
@@ -523,16 +540,16 @@ describe("github subscription handler", () => {
       );
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("❌ Failed to unsubscribe");
+      expect(message).toContain("❌ You don't have access");
     });
 
     test("should strip markdown from repo name", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([
-          { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
-        ])
+        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
       );
-      mockSubscriptionService.unsubscribe = mock(() => Promise.resolve(true));
+      mockSubscriptionService.removeEventTypes = mock(() =>
+        Promise.resolve({ success: true, deleted: true })
+      );
 
       await handleGithubSubscription(
         mockHandler,
@@ -541,9 +558,9 @@ describe("github subscription handler", () => {
         mockOAuthService
       );
 
-      const unsubCalls = mockSubscriptionService.unsubscribe.mock.calls;
-      expect(unsubCalls.length).toBe(1);
-      expect(unsubCalls[0][2]).toBe("owner/repo");
+      const removeCalls = mockSubscriptionService.removeEventTypes.mock.calls;
+      expect(removeCalls.length).toBe(1);
+      expect(removeCalls[0][3]).toBe("owner/repo");
     });
   });
 
