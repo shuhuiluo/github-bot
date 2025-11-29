@@ -7,11 +7,15 @@ import {
   DEFAULT_EVENT_TYPES_ARRAY,
   type EventType,
 } from "../constants";
+import { formatBranchFilter } from "../formatters/subscription-messages";
 import {
   TokenStatus,
   type GitHubOAuthService,
 } from "../services/github-oauth-service";
-import type { SubscriptionService } from "../services/subscription-service";
+import type {
+  BranchFilter,
+  SubscriptionService,
+} from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";
 import { handleInvalidOAuthToken } from "../utils/oauth-helpers";
 import { stripMarkdown } from "../utils/stripper";
@@ -29,7 +33,7 @@ export async function handleGithubSubscription(
     await handler.sendMessage(
       channelId,
       "**Usage:**\n\n" +
-        `- \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\` - Subscribe to GitHub events or add event types\n\n` +
+        `- \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}] [--branches main,release/*]\` - Subscribe to GitHub events or add event types\n\n` +
         "- `/github unsubscribe owner/repo [--events type1,type2]` - Unsubscribe from a repository or remove specific event types\n\n" +
         "- `/github status` - Show current subscriptions"
     );
@@ -85,7 +89,7 @@ async function handleSubscribe(
   if (!repoArg) {
     await handler.sendMessage(
       channelId,
-      `❌ Usage: \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}]\``
+      `❌ Usage: \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}] [--branches main,release/*]\``
     );
     return;
   }
@@ -100,6 +104,7 @@ async function handleSubscribe(
   }
 
   const hasEventsFlag = args.some(arg => arg.startsWith("--events"));
+  const hasBranchesFlag = args.some(arg => arg.startsWith("--branches"));
 
   // Parse and validate event types from args
   let eventTypes: EventType[];
@@ -112,6 +117,9 @@ async function handleSubscribe(
     return;
   }
 
+  // Parse branch filter
+  const branchFilter = parseBranchFilter(args);
+
   // Check if already subscribed - if so, add event types instead (case-insensitive match)
   const channelSubscriptions =
     await subscriptionService.getChannelSubscriptions(channelId, spaceId);
@@ -119,14 +127,21 @@ async function handleSubscribe(
     sub => sub.repo.toLowerCase() === repo.toLowerCase()
   );
 
-  if (existingSubscription && hasEventsFlag) {
+  if (existingSubscription && (hasEventsFlag || hasBranchesFlag)) {
+    // Only pass event types if --events flag was used, otherwise pass empty array
+    // to avoid adding default event types when only --branches is specified
+    const eventTypesToUpdate = hasEventsFlag ? eventTypes : [];
+    // Only pass branchFilter if --branches flag was used, otherwise pass undefined
+    // to preserve existing branch filter when only --events is specified
+    const branchFilterToUpdate = hasBranchesFlag ? branchFilter : undefined;
     return handleUpdateSubscription(
       handler,
       event,
       subscriptionService,
       oauthService,
       existingSubscription,
-      eventTypes
+      eventTypesToUpdate,
+      branchFilterToUpdate
     );
   }
 
@@ -145,7 +160,8 @@ async function handleSubscribe(
     subscriptionService,
     oauthService,
     repo,
-    eventTypes
+    eventTypes,
+    branchFilter
   );
 }
 
@@ -158,7 +174,8 @@ async function handleNewSubscription(
   subscriptionService: SubscriptionService,
   oauthService: GitHubOAuthService,
   repo: string,
-  eventTypes: EventType[]
+  eventTypes: EventType[],
+  branchFilter: BranchFilter
 ): Promise<void> {
   const { channelId, spaceId, userId } = event;
 
@@ -174,7 +191,7 @@ async function handleNewSubscription(
       channelId,
       spaceId,
       "subscribe",
-      { repo, eventTypes }
+      { repo, eventTypes, branchFilter }
     );
     return;
   }
@@ -186,6 +203,7 @@ async function handleNewSubscription(
     channelId,
     repoIdentifier: repo,
     eventTypes,
+    branchFilter,
   });
 
   if (!result.success && result.requiresInstallation) {
@@ -207,21 +225,26 @@ async function handleNewSubscription(
   await subscriptionService.sendSubscriptionSuccess(
     result,
     eventTypes,
+    branchFilter,
     channelId,
     handler
   );
 }
 
 /**
- * Handle update to existing subscription (add event types)
+ * Handle update to existing subscription (add event types or update branch filter)
  */
 async function handleUpdateSubscription(
   handler: BotHandler,
   event: SlashCommandEvent,
   subscriptionService: SubscriptionService,
   oauthService: GitHubOAuthService,
-  existingSubscription: { repo: string; deliveryMode: string },
-  eventTypes: EventType[]
+  existingSubscription: {
+    repo: string;
+    deliveryMode: string;
+  },
+  eventTypes: EventType[],
+  branchFilter?: BranchFilter
 ): Promise<void> {
   const { channelId, spaceId, userId } = event;
   const { repo } = existingSubscription;
@@ -238,30 +261,33 @@ async function handleUpdateSubscription(
       channelId,
       spaceId,
       "subscribe-update",
-      { repo, eventTypes }
+      { repo, eventTypes, branchFilter }
     );
     return;
   }
 
-  // Add event types to existing subscription (validates repo access)
-  const addResult = await subscriptionService.addEventTypes(
+  // Update subscription (add event types and/or update branch filter)
+  const updateResult = await subscriptionService.updateSubscription(
     userId,
     spaceId,
     channelId,
     repo,
-    eventTypes
+    eventTypes,
+    branchFilter
   );
 
-  if (!addResult.success) {
-    await handler.sendMessage(channelId, `❌ ${addResult.error}`);
+  if (!updateResult.success) {
+    await handler.sendMessage(channelId, `❌ ${updateResult.error}`);
     return;
   }
 
   const mode = existingSubscription.deliveryMode === "webhook" ? "⚡" : "⏱️";
+  const branchInfo = formatBranchFilter(updateResult.branchFilter ?? null);
   await handler.sendMessage(
     channelId,
     `✅ **Updated subscription to ${repo}**\n\n` +
-      `${mode} Event types: **${formatEventTypes(addResult.eventTypes!)}**`
+      `${mode} Events: **${formatEventTypes(updateResult.eventTypes ?? [])}**\n` +
+      `🌿 Branches: **${branchInfo}**`
   );
 }
 
@@ -525,9 +551,10 @@ async function handleStatus(
   const repoList = subscriptions
     .map(sub => {
       const mode = sub.deliveryMode === "webhook" ? "⚡" : "⏱️";
-      return `${mode} ${sub.repo} (${formatEventTypes(sub.eventTypes)})`;
+      const branchInfo = formatBranchFilter(sub.branchFilter);
+      return `${mode} ${sub.repo}\n   Events: ${formatEventTypes(sub.eventTypes)}\n   Branches: ${branchInfo}`;
     })
-    .join("\n");
+    .join("\n\n");
 
   await handler.sendMessage(
     channelId,
@@ -606,4 +633,42 @@ function parseEventTypes(args: string[]): EventType[] {
  */
 function formatEventTypes(eventTypes: EventType[]): string {
   return eventTypes.join(", ");
+}
+
+/**
+ * Parse branch filter from --branches flag
+ * Returns null if no flag (default branch only), or the specified filter
+ *
+ * Examples:
+ *   --branches main,develop    returns "main,develop"
+ *   --branches release/*       returns "release/*"
+ *   --branches all             returns "all"
+ *   --branches *               returns "all"
+ *   (no flag)                  returns null (default branch only)
+ */
+function parseBranchFilter(args: string[]): BranchFilter {
+  const branchesIndex = args.findIndex(arg => arg.startsWith("--branches"));
+  if (branchesIndex === -1) return null;
+
+  let rawBranches: string;
+
+  // Check for --branches=main,develop format
+  if (args[branchesIndex].includes("=")) {
+    rawBranches = args[branchesIndex].split("=")[1] || "";
+  } else if (branchesIndex + 1 < args.length) {
+    // Check for --branches main,develop format (next arg)
+    rawBranches = args[branchesIndex + 1];
+  } else {
+    return null;
+  }
+
+  const trimmed = rawBranches.trim();
+  if (!trimmed) return null;
+
+  // Normalize "all" and "*" to "all"
+  if (trimmed.toLowerCase() === "all" || trimmed === "*") {
+    return "all";
+  }
+
+  return trimmed;
 }

@@ -18,6 +18,7 @@ export const EventTypeSchema = z.enum(ALLOWED_EVENT_TYPES);
 export const RedirectDataSchema = z.object({
   repo: z.string(),
   eventTypes: z.array(EventTypeSchema).optional(),
+  branchFilter: z.string().nullable().optional(),
   messageEventId: z.string().optional(),
 });
 export type RedirectData = z.infer<typeof RedirectDataSchema>;

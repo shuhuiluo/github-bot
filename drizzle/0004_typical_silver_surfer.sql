@@ -1,0 +1,1 @@
+ALTER TABLE "github_subscriptions" ADD COLUMN "branch_filter" text;

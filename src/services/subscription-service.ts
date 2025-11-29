@@ -31,6 +31,14 @@ import type { TownsBot } from "../types/bot";
 import { GitHubOAuthService } from "./github-oauth-service";
 
 /**
+ * Branch filter value for subscriptions
+ * - null: default branch only (new default behavior)
+ * - 'all': all branches
+ * - 'main,develop,release/*': specific branches/patterns (glob support)
+ */
+export type BranchFilter = string | null;
+
+/**
  * Subscription request parameters
  */
 export interface SubscribeParams {
@@ -39,6 +47,7 @@ export interface SubscribeParams {
   channelId: string;
   repoIdentifier: string; // Format: "owner/repo"
   eventTypes: EventType[];
+  branchFilter?: BranchFilter;
 }
 
 /**
@@ -110,8 +119,14 @@ export class SubscriptionService {
    * Implements the full OAuth-first flow from the implementation plan
    */
   async createSubscription(params: SubscribeParams): Promise<SubscribeResult> {
-    const { townsUserId, spaceId, channelId, repoIdentifier, eventTypes } =
-      params;
+    const {
+      townsUserId,
+      spaceId,
+      channelId,
+      repoIdentifier,
+      eventTypes,
+      branchFilter,
+    } = params;
 
     // Parse owner/repo (caller validates format)
     const [owner, repo] = repoIdentifier.split("/");
@@ -245,6 +260,7 @@ export class SubscriptionService {
       installationId,
       enabled: true,
       eventTypes: eventTypes.join(","),
+      branchFilter: branchFilter ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -268,17 +284,23 @@ export class SubscriptionService {
   }
 
   /**
-   * Add event types to an existing subscription
+   * Update an existing subscription (add event types and/or update branch filter)
    * Validates repo access using the user's OAuth token
-   * Returns the updated event types array
+   * Returns the updated event types and branch filter
    */
-  async addEventTypes(
+  async updateSubscription(
     townsUserId: string,
     spaceId: string,
     channelId: string,
     repoFullName: string,
-    newEventTypes: EventType[]
-  ): Promise<{ success: boolean; eventTypes?: EventType[]; error?: string }> {
+    newEventTypes: EventType[],
+    branchFilter?: BranchFilter
+  ): Promise<{
+    success: boolean;
+    eventTypes?: EventType[];
+    branchFilter?: BranchFilter;
+    error?: string;
+  }> {
     const validation = await this.validateRepoAccessAndGetSubscription(
       townsUserId,
       spaceId,
@@ -286,22 +308,25 @@ export class SubscriptionService {
       repoFullName
     );
     if (!validation.success) return validation;
-    const { eventTypes: currentTypes } = validation;
+    const { eventTypes: currentTypes, branchFilter: currentBranchFilter } =
+      validation;
 
-    if (newEventTypes.length === 0) {
-      return { success: true, eventTypes: currentTypes };
-    }
+    // Merge and deduplicate event types
+    const mergedTypes =
+      newEventTypes.length > 0
+        ? ([...new Set([...currentTypes, ...newEventTypes])] as EventType[])
+        : currentTypes;
 
-    // Merge and deduplicate
-    const mergedTypes = [
-      ...new Set([...currentTypes, ...newEventTypes]),
-    ] as EventType[];
+    // Use new branch filter if provided, otherwise keep current
+    const finalBranchFilter =
+      branchFilter !== undefined ? branchFilter : currentBranchFilter;
 
     // Update subscription
     const result = await db
       .update(githubSubscriptions)
       .set({
         eventTypes: mergedTypes.join(","),
+        branchFilter: finalBranchFilter,
         updatedAt: new Date(),
       })
       .where(
@@ -323,6 +348,7 @@ export class SubscriptionService {
     return {
       success: true,
       eventTypes: mergedTypes,
+      branchFilter: finalBranchFilter,
     };
   }
 
@@ -507,6 +533,7 @@ export class SubscriptionService {
     eventTypes: EventType[];
     deliveryMode: string;
     createdByTownsUserId: string;
+    branchFilter: BranchFilter;
   } | null> {
     const results = await db
       .select({
@@ -514,6 +541,7 @@ export class SubscriptionService {
         eventTypes: githubSubscriptions.eventTypes,
         deliveryMode: githubSubscriptions.deliveryMode,
         createdByTownsUserId: githubSubscriptions.createdByTownsUserId,
+        branchFilter: githubSubscriptions.branchFilter,
       })
       .from(githubSubscriptions)
       .where(
@@ -540,13 +568,19 @@ export class SubscriptionService {
     channelId: string,
     spaceId: string
   ): Promise<
-    Array<{ repo: string; eventTypes: EventType[]; deliveryMode: string }>
+    Array<{
+      repo: string;
+      eventTypes: EventType[];
+      deliveryMode: string;
+      branchFilter: BranchFilter;
+    }>
   > {
     const results = await db
       .select({
         repo: githubSubscriptions.repoFullName,
         eventTypes: githubSubscriptions.eventTypes,
         deliveryMode: githubSubscriptions.deliveryMode,
+        branchFilter: githubSubscriptions.branchFilter,
       })
       .from(githubSubscriptions)
       .where(
@@ -560,6 +594,7 @@ export class SubscriptionService {
       repo: r.repo,
       eventTypes: parseEventTypes(r.eventTypes),
       deliveryMode: r.deliveryMode,
+      branchFilter: r.branchFilter,
     }));
   }
 
@@ -574,7 +609,13 @@ export class SubscriptionService {
   async getRepoSubscribers(
     repoFullName: string,
     deliveryMode?: "webhook" | "polling"
-  ): Promise<Array<{ channelId: string; eventTypes: EventType[] }>> {
+  ): Promise<
+    Array<{
+      channelId: string;
+      eventTypes: EventType[];
+      branchFilter: BranchFilter;
+    }>
+  > {
     const conditions = [eq(githubSubscriptions.repoFullName, repoFullName)];
 
     if (deliveryMode) {
@@ -585,6 +626,7 @@ export class SubscriptionService {
       .select({
         channelId: githubSubscriptions.channelId,
         eventTypes: githubSubscriptions.eventTypes,
+        branchFilter: githubSubscriptions.branchFilter,
       })
       .from(githubSubscriptions)
       .where(and(...conditions));
@@ -592,6 +634,7 @@ export class SubscriptionService {
     return results.map(r => ({
       channelId: r.channelId,
       eventTypes: parseEventTypes(r.eventTypes),
+      branchFilter: r.branchFilter,
     }));
   }
 
@@ -809,6 +852,7 @@ export class SubscriptionService {
   async sendSubscriptionSuccess(
     result: Extract<SubscribeResult, { success: true }>,
     eventTypes: EventType[],
+    branchFilter: BranchFilter,
     channelId: string,
     sender: Pick<BotHandler, "sendMessage">
   ): Promise<void> {
@@ -818,6 +862,7 @@ export class SubscriptionService {
     const message = formatSubscriptionSuccess(
       result.repoFullName,
       eventTypes,
+      branchFilter,
       deliveryInfo
     );
 
@@ -956,7 +1001,7 @@ export class SubscriptionService {
     channelId: string,
     repoFullName: string
   ): Promise<
-    | { success: true; eventTypes: EventType[] }
+    | { success: true; eventTypes: EventType[]; branchFilter: BranchFilter }
     | { success: false; error: string }
   > {
     const githubToken = await this.oauthService.getToken(townsUserId);
@@ -985,7 +1030,11 @@ export class SubscriptionService {
       return { success: false, error: `Not subscribed to ${repoFullName}` };
     }
 
-    return { success: true, eventTypes: subscription.eventTypes };
+    return {
+      success: true,
+      eventTypes: subscription.eventTypes,
+      branchFilter: subscription.branchFilter,
+    };
   }
 }
 

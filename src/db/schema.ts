@@ -89,6 +89,8 @@ export const githubSubscriptions = pgTable(
     // Currently always true - not used for filtering subscriptions
     enabled: boolean("enabled").notNull().default(true),
     eventTypes: text("event_types").notNull().default(DEFAULT_EVENT_TYPES), // Comma-separated event types
+    // Branch filter: NULL = default branch only, 'all' = all branches, 'main,develop,release/*' = specific patterns
+    branchFilter: text("branch_filter"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },

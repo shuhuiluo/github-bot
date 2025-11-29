@@ -5,6 +5,7 @@ import {
   GitHubOAuthService,
   TokenStatus,
 } from "../services/github-oauth-service";
+import type { BranchFilter } from "../services/subscription-service";
 import type { RedirectAction, RedirectData } from "../types/oauth";
 
 /**
@@ -120,7 +121,11 @@ export async function handleInvalidOAuthToken(
   channelId: string,
   spaceId: string,
   redirectAction: RedirectAction,
-  redirectData: { repo: string; eventTypes: EventType[] }
+  redirectData: {
+    repo: string;
+    eventTypes: EventType[];
+    branchFilter?: BranchFilter;
+  }
 ): Promise<void> {
   switch (tokenStatus) {
     case TokenStatus.NotLinked:

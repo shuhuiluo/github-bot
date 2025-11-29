@@ -2,6 +2,7 @@ import type { Context } from "hono";
 
 import { getOwnerIdFromUsername, parseRepo } from "../api/github-client";
 import { DEFAULT_EVENT_TYPES_ARRAY, type EventType } from "../constants";
+import { formatBranchFilter } from "../formatters/subscription-messages";
 import {
   generateInstallUrl,
   type InstallationService,
@@ -67,18 +68,21 @@ export async function handleOAuthCallback(
         ];
 
         // Attempt subscription now that OAuth is complete
+        const branchFilter = redirectData.branchFilter ?? null;
         const subResult = await subscriptionService.createSubscription({
           townsUserId,
           spaceId,
           channelId,
           repoIdentifier: redirectData.repo,
           eventTypes,
+          branchFilter,
         });
 
         if (subResult.success) {
           await subscriptionService.sendSubscriptionSuccess(
             subResult,
             eventTypes,
+            branchFilter,
             channelId,
             bot
           );
@@ -113,19 +117,24 @@ export async function handleOAuthCallback(
           ...DEFAULT_EVENT_TYPES_ARRAY,
         ];
 
-        const updateResult = await subscriptionService.addEventTypes(
+        const updateResult = await subscriptionService.updateSubscription(
           townsUserId,
           spaceId,
           channelId,
           redirectData.repo,
-          eventTypes
+          eventTypes,
+          redirectData.branchFilter ?? null
         );
 
         if (updateResult.success) {
+          const branchInfo = formatBranchFilter(
+            updateResult.branchFilter ?? null
+          );
           await bot.sendMessage(
             channelId,
             `✅ **Updated subscription to ${redirectData.repo}**\n\n` +
-              `Event types: **${updateResult.eventTypes!.join(", ")}**`
+              `Events: **${(updateResult.eventTypes ?? []).join(", ")}**\n` +
+              `Branches: **${branchInfo}**`
           );
         } else {
           await bot.sendMessage(channelId, `❌ ${updateResult.error}`);

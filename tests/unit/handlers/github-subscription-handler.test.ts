@@ -48,6 +48,13 @@ describe("github subscription handler", () => {
       removeEventTypes: mock(() =>
         Promise.resolve({ success: true, deleted: true })
       ),
+      updateSubscription: mock(() =>
+        Promise.resolve({
+          success: true,
+          eventTypes: ["pr", "issues"],
+          branchFilter: null,
+        })
+      ),
       registerPendingMessage: mock(() => {}),
       sendSubscriptionSuccess: mock(() => Promise.resolve()),
     };
@@ -109,7 +116,11 @@ describe("github subscription handler", () => {
     test("should handle case-insensitive actions - unsubscribe", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
         Promise.resolve([
-          { repo: "owner/repo", eventTypes: DEFAULT_EVENT_TYPES },
+          {
+            repo: "owner/repo",
+            eventTypes: DEFAULT_EVENT_TYPES,
+            branchFilter: null,
+          },
         ])
       );
 
@@ -131,6 +142,7 @@ describe("github subscription handler", () => {
             repo: "owner/repo",
             eventTypes: DEFAULT_EVENT_TYPES.split(",") as EventType[],
             deliveryMode: "webhook",
+            branchFilter: null,
           },
         ])
       );
@@ -204,6 +216,7 @@ describe("github subscription handler", () => {
         channelId: "test-channel",
         repoIdentifier: "facebook/react",
         eventTypes: DEFAULT_EVENT_TYPES.split(","),
+        branchFilter: null,
       });
 
       expect(
@@ -366,6 +379,7 @@ describe("github subscription handler", () => {
       ).toHaveBeenCalledWith(
         pollingResult,
         expect.any(Array),
+        null, // branchFilter
         "test-channel",
         mockHandler
       );
@@ -461,7 +475,11 @@ describe("github subscription handler", () => {
     test("should send error when not subscribed to repo", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
         Promise.resolve([
-          { repo: "other/repo", eventTypes: DEFAULT_EVENT_TYPES },
+          {
+            repo: "other/repo",
+            eventTypes: DEFAULT_EVENT_TYPES,
+            branchFilter: null,
+          },
         ])
       );
 
@@ -478,7 +496,13 @@ describe("github subscription handler", () => {
 
     test("should successfully unsubscribe from repo", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
+        Promise.resolve([
+          {
+            repo: "owner/repo",
+            eventTypes: ["pr", "issues"],
+            branchFilter: null,
+          },
+        ])
       );
       mockSubscriptionService.removeEventTypes = mock(() =>
         Promise.resolve({ success: true, deleted: true })
@@ -507,7 +531,13 @@ describe("github subscription handler", () => {
 
     test("should handle case-insensitive repo names", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
+        Promise.resolve([
+          {
+            repo: "owner/repo",
+            eventTypes: ["pr", "issues"],
+            branchFilter: null,
+          },
+        ])
       );
       mockSubscriptionService.removeEventTypes = mock(() =>
         Promise.resolve({ success: true, deleted: true })
@@ -526,7 +556,13 @@ describe("github subscription handler", () => {
 
     test("should handle unsubscribe failure", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
+        Promise.resolve([
+          {
+            repo: "owner/repo",
+            eventTypes: ["pr", "issues"],
+            branchFilter: null,
+          },
+        ])
       );
       mockSubscriptionService.removeEventTypes = mock(() =>
         Promise.resolve({ success: false, error: "You don't have access" })
@@ -545,7 +581,13 @@ describe("github subscription handler", () => {
 
     test("should strip markdown from repo name", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
-        Promise.resolve([{ repo: "owner/repo", eventTypes: ["pr", "issues"] }])
+        Promise.resolve([
+          {
+            repo: "owner/repo",
+            eventTypes: ["pr", "issues"],
+            branchFilter: null,
+          },
+        ])
       );
       mockSubscriptionService.removeEventTypes = mock(() =>
         Promise.resolve({ success: true, deleted: true })
@@ -581,18 +623,26 @@ describe("github subscription handler", () => {
       expect(message).toContain("📭 **No subscriptions**");
     });
 
-    test("should list all subscriptions", async () => {
+    test("should list all subscriptions with branch filter info", async () => {
       mockSubscriptionService.getChannelSubscriptions = mock(() =>
         Promise.resolve([
           {
             repo: "owner/repo1",
             eventTypes: DEFAULT_EVENT_TYPES.split(",") as EventType[],
             deliveryMode: "webhook",
+            branchFilter: null,
           },
           {
             repo: "owner/repo2",
             eventTypes: ["pr", "ci"] as EventType[],
             deliveryMode: "polling",
+            branchFilter: "main,develop",
+          },
+          {
+            repo: "owner/repo3",
+            eventTypes: ["commits"] as EventType[],
+            deliveryMode: "webhook",
+            branchFilter: "all",
           },
         ])
       );
@@ -605,9 +655,138 @@ describe("github subscription handler", () => {
       );
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("📬 **Subscribed Repositories (2):**");
+      expect(message).toContain("📬 **Subscribed Repositories (3):**");
       expect(message).toContain("owner/repo1");
       expect(message).toContain("owner/repo2");
+      expect(message).toContain("owner/repo3");
+      expect(message).toContain("default branch");
+      expect(message).toContain("main,develop");
+      expect(message).toContain("all branches");
+    });
+  });
+
+  describe("branch filter", () => {
+    test("should pass null branchFilter when no --branches flag", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        createTestEvent({ args: ["subscribe", "owner/repo"] }),
+        mockSubscriptionService,
+        mockOAuthService
+      );
+
+      const createCalls = mockSubscriptionService.createSubscription.mock.calls;
+      expect(createCalls[0][0].branchFilter).toBe(null);
+    });
+
+    test("should handle --branches flag with specific branches", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        createTestEvent({
+          args: ["subscribe", "owner/repo", "--branches", "main,develop"],
+        }),
+        mockSubscriptionService,
+        mockOAuthService
+      );
+
+      const createCalls = mockSubscriptionService.createSubscription.mock.calls;
+      expect(createCalls[0][0].branchFilter).toBe("main,develop");
+    });
+
+    test("should handle --branches=value format", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        createTestEvent({
+          args: ["subscribe", "owner/repo", "--branches=release/*"],
+        }),
+        mockSubscriptionService,
+        mockOAuthService
+      );
+
+      const createCalls = mockSubscriptionService.createSubscription.mock.calls;
+      expect(createCalls[0][0].branchFilter).toBe("release/*");
+    });
+
+    test("should normalize --branches=all to 'all'", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        createTestEvent({
+          args: ["subscribe", "owner/repo", "--branches", "all"],
+        }),
+        mockSubscriptionService,
+        mockOAuthService
+      );
+
+      const createCalls = mockSubscriptionService.createSubscription.mock.calls;
+      expect(createCalls[0][0].branchFilter).toBe("all");
+    });
+
+    test("should normalize --branches=* to 'all'", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        createTestEvent({
+          args: ["subscribe", "owner/repo", "--branches=*"],
+        }),
+        mockSubscriptionService,
+        mockOAuthService
+      );
+
+      const createCalls = mockSubscriptionService.createSubscription.mock.calls;
+      expect(createCalls[0][0].branchFilter).toBe("all");
+    });
+
+    test("should combine --events and --branches flags", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        createTestEvent({
+          args: [
+            "subscribe",
+            "owner/repo",
+            "--events",
+            "commits,ci",
+            "--branches",
+            "main",
+          ],
+        }),
+        mockSubscriptionService,
+        mockOAuthService
+      );
+
+      const createCalls = mockSubscriptionService.createSubscription.mock.calls;
+      expect(createCalls[0][0].eventTypes).toEqual(["commits", "ci"]);
+      expect(createCalls[0][0].branchFilter).toBe("main");
+    });
+
+    test("should trigger update when --branches flag used on existing subscription", async () => {
+      mockSubscriptionService.getChannelSubscriptions = mock(() =>
+        Promise.resolve([
+          {
+            repo: "owner/repo",
+            eventTypes: ["pr", "issues"] as EventType[],
+            deliveryMode: "webhook",
+            branchFilter: null,
+          },
+        ])
+      );
+      mockSubscriptionService.updateSubscription = mock(() =>
+        Promise.resolve({
+          success: true,
+          eventTypes: ["pr", "issues"],
+          branchFilter: "main,develop",
+        })
+      );
+
+      await handleGithubSubscription(
+        mockHandler,
+        createTestEvent({
+          args: ["subscribe", "owner/repo", "--branches", "main,develop"],
+        }),
+        mockSubscriptionService,
+        mockOAuthService
+      );
+
+      const updateCalls = mockSubscriptionService.updateSubscription.mock.calls;
+      expect(updateCalls.length).toBe(1);
+      expect(updateCalls[0][5]).toBe("main,develop");
     });
   });
 });
