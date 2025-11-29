@@ -294,7 +294,7 @@ export class SubscriptionService {
     channelId: string,
     repoFullName: string,
     newEventTypes: EventType[],
-    branchFilter: BranchFilter
+    branchFilter?: BranchFilter
   ): Promise<{
     success: boolean;
     eventTypes?: EventType[];

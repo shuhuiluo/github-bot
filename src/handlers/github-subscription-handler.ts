@@ -131,6 +131,9 @@ async function handleSubscribe(
     // Only pass event types if --events flag was used, otherwise pass empty array
     // to avoid adding default event types when only --branches is specified
     const eventTypesToUpdate = hasEventsFlag ? eventTypes : [];
+    // Only pass branchFilter if --branches flag was used, otherwise pass undefined
+    // to preserve existing branch filter when only --events is specified
+    const branchFilterToUpdate = hasBranchesFlag ? branchFilter : undefined;
     return handleUpdateSubscription(
       handler,
       event,
@@ -138,7 +141,7 @@ async function handleSubscribe(
       oauthService,
       existingSubscription,
       eventTypesToUpdate,
-      branchFilter
+      branchFilterToUpdate
     );
   }
 
@@ -239,10 +242,9 @@ async function handleUpdateSubscription(
   existingSubscription: {
     repo: string;
     deliveryMode: string;
-    branchFilter: BranchFilter;
   },
   eventTypes: EventType[],
-  branchFilter: BranchFilter
+  branchFilter?: BranchFilter
 ): Promise<void> {
   const { channelId, spaceId, userId } = event;
   const { repo } = existingSubscription;
