@@ -1,3 +1,5 @@
+import { isMatch } from "picomatch";
+
 import { EventType } from "../constants";
 import {
   formatCreate,
@@ -87,17 +89,13 @@ export class EventProcessor {
       interestedChannels = interestedChannels.filter(ch =>
         matchesBranchFilter(branch, ch.branchFilter, defaultBranch)
       );
-
-      if (interestedChannels.length === 0) {
-        console.log(
-          `No interested channels for ${eventType} event on branch ${branch} (filtered by branch preferences)`
-        );
-        return;
-      }
     }
 
     if (interestedChannels.length === 0) {
-      console.log(`No interested channels for ${eventType} event`);
+      const branchInfo = branchContext
+        ? ` on branch ${branchContext.branch}`
+        : "";
+      console.log(`No interested channels for ${eventType} event${branchInfo}`);
       return;
     }
 
@@ -291,7 +289,7 @@ export class EventProcessor {
  * @param defaultBranch - Repository's default branch for null filter
  * @returns true if the branch should be included
  */
-function matchesBranchFilter(
+export function matchesBranchFilter(
   branch: string,
   filter: BranchFilter,
   defaultBranch: string
@@ -308,31 +306,5 @@ function matchesBranchFilter(
 
   // Specific patterns (comma-separated, glob support)
   const patterns = filter.split(",").map(p => p.trim());
-  return patterns.some(pattern => matchGlob(branch, pattern));
-}
-
-/**
- * Simple glob matching for branch patterns
- * Supports * wildcard at end (e.g., "release/*" matches "release/v1.0")
- */
-function matchGlob(branch: string, pattern: string): boolean {
-  // Exact match
-  if (!pattern.includes("*")) {
-    return branch === pattern;
-  }
-
-  // Wildcard at end: "release/*" matches "release/anything"
-  if (pattern.endsWith("/*")) {
-    const prefix = pattern.slice(0, -1); // "release/"
-    return branch.startsWith(prefix);
-  }
-
-  // General wildcard: "feature-*" matches "feature-foo"
-  if (pattern.endsWith("*")) {
-    const prefix = pattern.slice(0, -1);
-    return branch.startsWith(prefix);
-  }
-
-  // Unsupported pattern, fall back to exact match
-  return branch === pattern;
+  return patterns.some(pattern => isMatch(branch, pattern));
 }
