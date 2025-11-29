@@ -280,11 +280,11 @@ async function handleUpdateSubscription(
   }
 
   const mode = existingSubscription.deliveryMode === "webhook" ? "⚡" : "⏱️";
-  const branchInfo = formatBranchFilter(updateResult.branchFilter!);
+  const branchInfo = formatBranchFilter(updateResult.branchFilter ?? null);
   await handler.sendMessage(
     channelId,
     `✅ **Updated subscription to ${repo}**\n\n` +
-      `${mode} Events: **${formatEventTypes(updateResult.eventTypes!)}**\n` +
+      `${mode} Events: **${formatEventTypes(updateResult.eventTypes ?? [])}**\n` +
       `🌿 Branches: **${branchInfo}**`
   );
 }

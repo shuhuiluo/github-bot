@@ -2,6 +2,7 @@ import type { Context } from "hono";
 
 import { getOwnerIdFromUsername, parseRepo } from "../api/github-client";
 import { DEFAULT_EVENT_TYPES_ARRAY, type EventType } from "../constants";
+import { formatBranchFilter } from "../formatters/subscription-messages";
 import {
   generateInstallUrl,
   type InstallationService,
@@ -126,16 +127,13 @@ export async function handleOAuthCallback(
         );
 
         if (updateResult.success) {
-          const branchInfo =
-            updateResult.branchFilter === null
-              ? "default branch"
-              : updateResult.branchFilter === "all"
-                ? "all branches"
-                : updateResult.branchFilter;
+          const branchInfo = formatBranchFilter(
+            updateResult.branchFilter ?? null
+          );
           await bot.sendMessage(
             channelId,
             `✅ **Updated subscription to ${redirectData.repo}**\n\n` +
-              `Events: **${updateResult.eventTypes!.join(", ")}**\n` +
+              `Events: **${(updateResult.eventTypes ?? []).join(", ")}**\n` +
               `Branches: **${branchInfo}**`
           );
         } else {
